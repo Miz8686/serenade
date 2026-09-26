@@ -149,5 +149,16 @@ func mouseCheck() string {
 	if um3.(model).cursor != 0 {
 		return "click outside list moved cursor"
 	}
+	// Transport buttons: prev [1,4), play [5,8), next [9,12) at Y=37.
+	m4 := mk()
+	um4, _ := m4.handleMouse(tea.MouseMsg{X: 6, Y: 37, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um4.(model).flash != "play" {
+		return "play button click did not flash"
+	}
+	m5 := mk()
+	um5, _ := m5.handleMouse(tea.MouseMsg{X: 60, Y: 37, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um5.(model).flash != "" {
+		return "click outside buttons flashed"
+	}
 	return ""
 }

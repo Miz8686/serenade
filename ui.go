@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/sahilm/fuzzy"
 	"golang.org/x/image/draw"
 )
@@ -75,6 +76,9 @@ type model struct {
 	kitty     bool
 	kittyID   int
 	appliedAc string
+	// Transport button flash feedback.
+	flash      string
+	flashZones []btnZone
 	// Phase-3 visualizer state.
 	tap       *vizTap
 	levels    []float64
@@ -252,6 +256,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+
+	case flashMsg:
+		m.flash = ""
+		return m, nil
 
 	case vizTickMsg:
 		if !m.vizActive || !m.shouldViz() {
@@ -529,6 +537,29 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		msg.Y >= listTop+2 && msg.Y < listTop+2+m.visibleRows()
 	inDetail := !inList && msg.X >= m.listOuterWidth() &&
 		msg.Y < m.height-m.statusH()
+	// Status-bar transport buttons live on the second content line:
+	// one border row + bar line above it.
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress &&
+		msg.Y == m.height-2 {
+		_, zones := m.statusLine()
+		for _, z := range zones {
+			if msg.X >= z.x0+1 && msg.X < z.x1+1 {
+				m.flash = z.action
+				switch z.action {
+				case "prev":
+					_ = m.be.prev()
+				case "play":
+					_ = m.be.toggle()
+				case "next":
+					_ = m.be.next()
+				}
+				return m, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+					return flashMsg{}
+				})
+			}
+		}
+		return m, nil
+	}
 	switch {
 	case msg.Button == tea.MouseButtonWheelUp && msg.Action == tea.MouseActionPress:
 		if inList {
@@ -889,6 +920,54 @@ func (m model) helpView() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// btnZone is a clickable status-bar region: rune-width offsets within
+// the status content line (border adds +1 to X at hit-test time).
+type btnZone struct {
+	x0, x1 int
+	action string
+}
+
+type flashMsg struct{}
+
+// statusLine builds the second status-bar line and its button zones.
+// Pure function of width/state: View and handleMouse share it so clicks
+// always land where the buttons render.
+func (m model) statusLine() (string, []btnZone) {
+	var b strings.Builder
+	var zones []btnZone
+	pos := 0
+	button := func(glyph, action string) {
+		cell := " " + glyph + " "
+		zones = append(zones, btnZone{pos, pos + runewidth.StringWidth(cell), action})
+		if m.flash == action {
+			cell = styleSelected.Render(cell)
+		}
+		b.WriteString(cell)
+		pos += runewidth.StringWidth(cell)
+	}
+	play := "▶"
+	if m.status.State == "paused" {
+		play = "⏸"
+	}
+	button("⏮", "prev")
+	b.WriteString(" ")
+	pos++
+	button(play, "play")
+	b.WriteString(" ")
+	pos++
+	button("⏭", "next")
+	rest := fmt.Sprintf(" │ %s / %s   %s",
+		fmtTime(m.status.Position), fmtTime(m.status.Duration), m.status.State)
+	if m.status.State == "" {
+		rest = " │ stopped"
+	}
+	if m.beErr != "" {
+		rest += "   " + styleError.Render(m.beErr)
+	}
+	b.WriteString(rest)
+	return b.String(), zones
+}
+
 func (m model) View() string {
 	if m.showHelp {
 		return m.helpView()
@@ -965,16 +1044,7 @@ func (m model) View() string {
 	}
 	m.bar.Width = max(10, m.width-30)
 	barLine := m.bar.ViewAs(pct)
-	state := m.status.State
-	if state == "" {
-		state = "stopped"
-	}
-	statusText := fmt.Sprintf("%s  %s / %s   %s",
-		map[string]string{"playing": "▶", "paused": "⏸"}[state],
-		fmtTime(m.status.Position), fmtTime(m.status.Duration), state)
-	if m.beErr != "" {
-		statusText += "   " + styleError.Render(m.beErr)
-	}
+	statusText, _ := m.statusLine()
 	// Compose: list left, art+detail right-top, status full-width bottom.
 	top := lipgloss.JoinHorizontal(lipgloss.Top, list, right)
 	return lipgloss.JoinVertical(lipgloss.Left, top,
