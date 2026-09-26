@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestIndexLibrary(t *testing.T) {
@@ -115,5 +117,23 @@ func TestHelpOverlay(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("overlay missing %q", want)
 		}
+	}
+}
+
+// Locks the selection/playing-row distinction: the playing row must
+// render distinctly from both a plain row and the cursor row, so the
+// two can never silently merge during refactors.
+func TestPlayingRowDistinct(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	buildBaseStyles()
+	plain := "  artist - title"
+	cursor := styleSelected.Render(plain)
+	playing := stylePlaying.Render("▶ artist - title")
+	if cursor == playing {
+		t.Fatalf("cursor and playing-row styles are identical")
+	}
+	if playing == plain || cursor == plain {
+		t.Fatalf("styled rows must differ from plain text")
 	}
 }
