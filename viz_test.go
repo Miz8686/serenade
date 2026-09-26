@@ -1,7 +1,9 @@
 package main
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -119,5 +121,36 @@ func TestStripRendersLiveLevels(t *testing.T) {
 	}
 	if lines != vizHeight {
 		t.Fatalf("strip height %d, want %d", lines, vizHeight)
+	}
+}
+
+// TestBlurTransitionRendersIdle forces a blur mid-playback with live
+// bars on screen and asserts the very next rendered strip is exactly
+// the idle baseline — no torn mix of live bars and idle state. This
+// is the regression net for the screenshot-transition garbage frame.
+func TestBlurTransitionRendersIdle(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.status = Status{State: "playing", File: "/x.flac", Duration: 200, Position: 10}
+	m.focused = true
+	m.vizActive = true
+	m.levels = make([]float64, 32)
+	m.peaks = make([]float64, 32)
+	for i := range m.levels {
+		m.levels[i] = 0.8
+		m.peaks[i] = 0.9
+	}
+	um, _ := m.Update(tea.BlurMsg{})
+	mm := um.(model)
+	if mm.vizActive {
+		t.Fatalf("blur must deactivate viz")
+	}
+	out := mm.renderViz()
+	if strings.Contains(out, "█") {
+		t.Fatalf("transition frame leaked live bars into idle strip")
+	}
+	idle := mm.renderViz()
+	if out != idle {
+		t.Fatalf("transition frame differs from steady idle render")
 	}
 }

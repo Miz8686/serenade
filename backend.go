@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,18 +50,15 @@ func (b *backend) runRemote(args ...string) (string, error) {
 }
 
 // alive reports whether the socket answers a status query.
+// Uses a context timeout rather than a Kill race: killing a process
+// while Run/Start is still setting it up races inside os/exec
+// (caught by -race). CommandContext cancels race-free.
 func (b *backend) alive() bool {
-	cmd := exec.Command("cmus-remote", "--server", b.sock, "-Q")
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "cmus-remote", "--server", b.sock, "-Q")
 	cmd.Stdout, cmd.Stderr = nil, nil
-	done := make(chan error, 1)
-	go func() { done <- cmd.Run() }()
-	select {
-	case err := <-done:
-		return err == nil
-	case <-time.After(1500 * time.Millisecond):
-		_ = cmd.Process.Kill()
-		return false
-	}
+	return cmd.Run() == nil
 }
 
 // ensureBackend reuses a live backend or supervises a new one.
