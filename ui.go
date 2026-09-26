@@ -44,6 +44,7 @@ const (
 
 type model struct {
 	be       *backend
+	cfg      Config
 	tracks   []Track
 	indexing bool
 	indexErr string
@@ -82,14 +83,40 @@ type statusMsg struct {
 	err error
 }
 
-func newModel(be *backend, kitty bool) model {
+// themeBase is the configured base palette. Per-track accents
+// override it via applyAccent; it is the fallback for art-less tracks.
+var themeBase = mochaTheme
+
+// buildBaseStyles rebuilds every package style from themeBase.
+func buildBaseStyles() {
+	t := themeBase
+	colBG = lipgloss.Color(t.Bg)
+	colSurface = lipgloss.Color(t.Surface)
+	colText = lipgloss.Color(t.Text)
+	colMuted = lipgloss.Color(t.Muted)
+	colAccent = lipgloss.Color(t.Accent)
+	colAccent2 = lipgloss.Color(t.Accent2)
+	colError = lipgloss.Color(t.Error)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
+	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
+	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
+	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleMuted = lipgloss.NewStyle().Foreground(colMuted)
+	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleError = lipgloss.NewStyle().Foreground(colError)
+}
+
+func newModel(be *backend, kitty bool, cfg Config) model {
 	vp := viewport.New(0, 0)
 	bar := progress.New(
 		progress.WithGradient(string(colAccent), string(colAccent2)),
 		progress.WithoutPercentage(),
 	)
+	themeBase = cfg.Theme
+	buildBaseStyles()
 	return model{
 		be:       be,
+		cfg:      cfg,
 		kitty:    kitty,
 		indexing: true,
 		focused:  true,
@@ -212,33 +239,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+	is := m.cfg.keyIs
 	// Playback controls are global: they work from either pane.
 	// Only list navigation, detail scrolling, tab-focus and quit are scoped.
-	switch msg.String() {
-	case "q", "ctrl+c":
+	switch {
+	case is("quit", k):
 		return m, tea.Quit
-	case " ":
+	case is("toggle", k):
 		_ = m.be.toggle()
 		return m, nil
-	case "n":
+	case is("next", k):
 		_ = m.be.next()
 		return m, nil
-	case "p":
+	case is("prev", k):
 		_ = m.be.prev()
 		return m, nil
-	case "left", "h":
+	case is("seekback", k):
 		_ = m.be.seek(-5)
 		return m, nil
-	case "right", "l":
+	case is("seekfwd", k):
 		_ = m.be.seek(5)
 		return m, nil
-	case "+", "=":
+	case is("volup", k):
 		_ = m.be.volume("+5%")
 		return m, nil
-	case "-", "_":
+	case is("voldown", k):
 		_ = m.be.volume("-5%")
 		return m, nil
-	case "enter":
+	case is("play", k):
 		if m.focus == focusList {
 			m.playCursor()
 			return m, nil
@@ -246,8 +275,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	// Detail pane gets navigation keys when focused.
 	if m.focus == focusDetail {
-		switch msg.String() {
-		case "tab":
+		switch {
+		case is("tab", k):
 			m.focus = focusList
 			m.layoutPanes()
 			return m, nil
@@ -256,27 +285,27 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail, cmd = m.detail.Update(msg)
 		return m, cmd
 	}
-	switch msg.String() {
-	case "tab":
+	switch {
+	case is("tab", k):
 		m.focus = focusDetail
 		m.layoutPanes()
 		return m, nil
-	case "up", "k":
+	case is("up", k):
 		m.cursor--
 		m.clampCursor()
-	case "down", "j":
+	case is("down", k):
 		m.cursor++
 		m.clampCursor()
-	case "pgup":
+	case is("pgup", k):
 		m.cursor -= m.visibleRows()
 		m.clampCursor()
-	case "pgdown":
+	case is("pgdown", k):
 		m.cursor += m.visibleRows()
 		m.clampCursor()
-	case "home", "g":
+	case is("home", k):
 		m.cursor = 0
 		m.clampCursor()
-	case "end", "G":
+	case is("end", k):
 		m.cursor = len(m.tracks) - 1
 		m.clampCursor()
 	}
@@ -383,20 +412,14 @@ func (m *model) layoutPanes() {
 	m.syncDetail()
 }
 
-// Mocha defaults used when art yields no accent.
-const (
-	defAccent  = "#CBA6F7"
-	defAccent2 = "#89B4FA"
-)
-
 // applyAccent pushes a per-track accent into selection, progress and
 // focus styles. No-op when unchanged.
 func (m *model) applyAccent(prim, sec string) {
 	if prim == "" {
-		prim = defAccent
+		prim = themeBase.Accent
 	}
 	if sec == "" {
-		sec = defAccent2
+		sec = themeBase.Accent2
 	}
 	key := prim + "|" + sec
 	if key == m.appliedAc {

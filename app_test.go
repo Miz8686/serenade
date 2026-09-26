@@ -36,7 +36,7 @@ func TestBackendSupervisor(t *testing.T) {
 func TestViewRenders(t *testing.T) {
 	os.Setenv("HOME", "/home/miz")
 	be := &backend{sock: "/nonexistent.sock"}
-	m := newModel(be, false)
+	m := newModel(be, false, defaultConfig())
 	m.tracks = []Track{{Path: "/x.flac", Artist: "A", Title: "T", Album: "Al"}}
 	m.indexing = false
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 167, Height: 39})

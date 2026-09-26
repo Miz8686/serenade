@@ -30,7 +30,7 @@ func selftest() int {
 		return fail("status: %v", err)
 	}
 	fmt.Printf("ok: status=%q file=%q\n", st.State, st.File)
-	m := newModel(be, false)
+	m := newModel(be, false, defaultConfig())
 	m.tracks = tracks
 	m.indexing = false
 	m.width, m.height = 167, 39
@@ -58,7 +58,7 @@ func mouseCheck() string {
 		for i := 0; i < 10; i++ {
 			tr = append(tr, Track{Path: fmt.Sprintf("/t%d.flac", i), Artist: "A", Title: fmt.Sprintf("T%d", i)})
 		}
-		m := newModel(&backend{sock: "/nonexistent.sock"}, false)
+		m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
 		m.tracks = tr
 		m.indexing = false
 		m.width, m.height = 167, 39

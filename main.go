@@ -26,7 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "gomusic: backend failed: %v (see ~/.cache/gomusic/cmus.log)\n", err)
 		fmt.Fprintln(os.Stderr, "gomusic: starting in library-only mode")
 	}
-	m := newModel(be, <-kittyCh)
+	m := newModel(be, <-kittyCh, loadConfig())
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
