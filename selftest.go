@@ -60,6 +60,7 @@ func mouseCheck() string {
 		}
 		m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
 		m.tracks = tr
+		m.view = tr
 		m.indexing = false
 		m.width, m.height = 167, 39
 		m.focus = focusDetail // prove clicks steal focus back
