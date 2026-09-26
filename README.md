@@ -1,4 +1,4 @@
-# gomusic
+# Serenade
 
 Minimal terminal music player in Go — Bubble Tea + Bubbles + Lip Gloss.
 One self-contained binary, no daemons, no shell-script glue.
@@ -17,7 +17,7 @@ One self-contained binary, no daemons, no shell-script glue.
   tapping the PipeWire monitor via `pw-cat` — no cava needed
 - **Bar**: gradient progress, MPRIS exposed by cmus itself (Waybar-ready)
 - **Extras**: fuzzy search, in-memory queue, `?` help overlay,
-  `~/.config/gomusic/config.toml` for theme + keybinds
+  `~/.config/serenade/config.toml` for theme + keybinds
 
 ## Requirements
 
@@ -27,10 +27,10 @@ One self-contained binary, no daemons, no shell-script glue.
 ## Build & install
 
 ```bash
-git clone https://github.com/Miz8686/gomusic.git
-cd gomusic
-go build -o gomusic .
-cp gomusic ~/.local/bin/
+git clone https://github.com/Miz8686/serenade.git
+cd serenade
+go build -o serenade .
+cp serenade ~/.local/bin/
 ```
 
 No config needed — zero-config works out of the box.
@@ -38,8 +38,8 @@ No config needed — zero-config works out of the box.
 ## Usage
 
 ```
-gomusic            # library + player
-gomusic --selftest # backend, index, status, render, mouse checks
+serenade            # library + player
+serenade --selftest # backend, index, status, render, mouse checks
 ```
 
 | Key | Action |
@@ -60,7 +60,7 @@ All rebindable in `config.toml`. Playback keys work from either pane.
 
 ## Config
 
-`~/.config/gomusic/config.toml` (optional):
+`~/.config/serenade/config.toml` (optional):
 
 ```toml
 [theme]

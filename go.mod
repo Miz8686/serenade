@@ -1,4 +1,4 @@
-module gomusic
+module serenade
 
 go 1.27.1
 

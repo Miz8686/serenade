@@ -1,6 +1,6 @@
 package main
 
-// config.go — ~/.config/gomusic/config.toml.
+// config.go — ~/.config/serenade/config.toml.
 //
 // Theme colors and keybinds, both overridable. Zero-config works exactly
 // like the old hardcoded defaults. This same effective map feeds the
@@ -168,11 +168,11 @@ func (c Config) keyIs(action, key string) bool {
 
 func configPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "gomusic", "config.toml")
+	return filepath.Join(home, ".config", "serenade", "config.toml")
 }
 
 // loadConfig returns effective config: built-in defaults, overlaid with
-// ~/.config/gomusic/config.toml when present. Missing file is fine.
+// ~/.config/serenade/config.toml when present. Missing file is fine.
 func loadConfig() Config {
 	c := defaultConfig()
 	path := configPath()

@@ -31,9 +31,9 @@ type backend struct {
 
 func socketPath() string {
 	if r := os.Getenv("XDG_RUNTIME_DIR"); r != "" {
-		return filepath.Join(r, "cmus-go.sock")
+		return filepath.Join(r, "serenade.sock")
 	}
-	return "/tmp/cmus-go.sock"
+	return "/tmp/serenade.sock"
 }
 
 // runRemote executes: cmus-remote --server <sock> <args...>
@@ -70,11 +70,11 @@ func ensureBackend() (*backend, error) {
 	if b.alive() {
 		return b, nil
 	}
-	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".cache", "gomusic"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".cache", "serenade"), 0o755); err != nil {
 		b.broken = err.Error()
 		return b, err
 	}
-	log, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), ".cache", "gomusic", "cmus.log"),
+	log, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), ".cache", "serenade", "cmus.log"),
 		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		b.broken = err.Error()
@@ -129,7 +129,7 @@ func ensureBackend() (*backend, error) {
 		}
 	}
 	b.cleanup()
-	b.broken = "cmus backend unresponsive; log at ~/.cache/gomusic/cmus.log"
+	b.broken = "cmus backend unresponsive; log at ~/.cache/serenade/cmus.log"
 	return b, fmt.Errorf("backend unresponsive after supervisor dismissal")
 }
 

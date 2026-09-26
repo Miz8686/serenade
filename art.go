@@ -33,7 +33,7 @@ const artCacheMaxW = 300
 
 func artDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "gomusic", "art")
+	return filepath.Join(home, ".cache", "serenade", "art")
 }
 
 // artKey identifies the source bytes: path + mtime + size, so retagged

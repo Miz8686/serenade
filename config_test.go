@@ -18,8 +18,8 @@ func TestConfigFileMerge(t *testing.T) {
 	t.Cleanup(func() { os.Setenv("HOME", "/home/miz") })
 	dir := t.TempDir()
 	os.Setenv("HOME", dir)
-	os.MkdirAll(dir+"/.config/gomusic", 0o755)
-	os.WriteFile(dir+"/.config/gomusic/config.toml", []byte("[theme]\nbase = \"mono\"\naccent = \"#FF0000\"\n[keys]\nquit = [\"ctrl+q\"]\n"), 0o644)
+	os.MkdirAll(dir+"/.config/serenade", 0o755)
+	os.WriteFile(dir+"/.config/serenade/config.toml", []byte("[theme]\nbase = \"mono\"\naccent = \"#FF0000\"\n[keys]\nquit = [\"ctrl+q\"]\n"), 0o644)
 	c := loadConfig()
 	if c.Theme.Accent != "#FF0000" || c.Theme.Text != "#FFFFFF" {
 		t.Fatalf("theme merge wrong: %+v", c.Theme)
