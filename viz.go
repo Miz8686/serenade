@@ -118,8 +118,11 @@ func (t *vizTap) pump(r io.Reader) {
 func (t *vizTap) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// Kill AND reap: without Wait the child lingers as a zombie
+	// (observed: one zombie per stop cycle).
 	if t.cmd != nil && t.cmd.Process != nil {
 		_ = t.cmd.Process.Kill()
+		_, _ = t.cmd.Process.Wait()
 	}
 	t.cmd = nil
 	t.running = false

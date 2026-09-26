@@ -260,6 +260,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.levels, m.peaks = nil, nil
 			return m, nil
 		}
+		// Health-check the tap every frame: a tap that died on its
+		// own (not via stop) must surface as an error and deactivate,
+		// never spin forever on empty frames with vizActive stuck on.
+		if running, broken := m.tap.state(); !running {
+			m.tap.stop()
+			m.vizActive = false
+			m.levels, m.peaks = nil, nil
+			if broken != "" {
+				m.vizErr = broken
+			}
+			return m, nil
+		}
 		if frame := m.tap.frame(vizFFTSize); frame != nil {
 			bars := m.vizBars()
 			m.levels = fftLevels(frame, vizRate, bars)
