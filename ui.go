@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 	"golang.org/x/image/draw"
 )
 
@@ -43,19 +45,23 @@ const (
 )
 
 type model struct {
-	be       *backend
-	cfg      Config
-	tracks   []Track
-	indexing bool
-	indexErr string
-	cursor   int
-	offset   int
-	focus    focusPane
-	width    int
-	height   int
-	status   Status
-	prev     Status // previous poll; detects natural track end
-	beErr    string
+	be        *backend
+	cfg       Config
+	tracks    []Track
+	indexing  bool
+	indexErr  string
+	cursor    int
+	offset    int
+	view      []Track // displayed rows: full library or live fuzzy filter
+	viewHL    [][]int // per-row matched char indexes (fuzzy highlight)
+	searching bool
+	searchBox textinput.Model
+	focus     focusPane
+	width     int
+	height    int
+	status    Status
+	prev      Status // previous poll; detects natural track end
+	beErr     string
 	// Phase-2 art state. artImg holds cached pixels (never re-decoded);
 	// artBlock is the pre-rendered right-pane art section.
 	artImg   image.Image
@@ -114,16 +120,20 @@ func newModel(be *backend, kitty bool, cfg Config) model {
 	)
 	themeBase = cfg.Theme
 	buildBaseStyles()
+	ti := textinput.New()
+	ti.Prompt = "/ "
+	ti.CharLimit = 64
 	return model{
-		be:       be,
-		cfg:      cfg,
-		kitty:    kitty,
-		indexing: true,
-		focused:  true,
-		detail:   vp,
-		bar:      bar,
-		width:    80,
-		height:   24,
+		be:        be,
+		cfg:       cfg,
+		searchBox: ti,
+		kitty:     kitty,
+		indexing:  true,
+		focused:   true,
+		detail:    vp,
+		bar:       bar,
+		width:     80,
+		height:    24,
 	}
 }
 
@@ -150,7 +160,7 @@ func (m model) visibleRows() int {
 }
 
 func (m *model) clampCursor() {
-	n := len(m.tracks)
+	n := len(m.view)
 	if n == 0 {
 		m.cursor, m.offset = 0, 0
 		return
@@ -185,6 +195,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.indexErr = msg.err.Error()
 		} else {
 			m.tracks = msg.tracks
+			m.view = msg.tracks
 		}
 		m.clampCursor()
 		return m, nil
@@ -238,9 +249,81 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// applyFilter rebuilds the displayed view from the query using fuzzy
+// matching. Empty query restores the full library.
+func (m *model) applyFilter() {
+	q := m.searchBox.Value()
+	if q == "" {
+		m.view = m.tracks
+		m.viewHL = nil
+		m.clampCursor()
+		return
+	}
+	labels := make([]string, len(m.tracks))
+	for i, t := range m.tracks {
+		labels[i] = t.label()
+	}
+	matches := fuzzy.Find(q, labels)
+	m.view = make([]Track, 0, len(matches))
+	m.viewHL = make([][]int, 0, len(matches))
+	for _, mt := range matches {
+		m.view = append(m.view, m.tracks[mt.Index])
+		m.viewHL = append(m.viewHL, mt.MatchedIndexes)
+	}
+	m.clampCursor()
+}
+
+// fuzzyLine renders label with matched chars in the accent color.
+func fuzzyLine(label string, idx []int) string {
+	if len(idx) == 0 {
+		return label
+	}
+	hit := map[int]bool{}
+	for _, i := range idx {
+		hit[i] = true
+	}
+	var b strings.Builder
+	runes := []rune(label)
+	for i, r := range runes {
+		if hit[i] {
+			b.WriteString(stylePlaying.Render(string(r)))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	is := m.cfg.keyIs
+	// Search mode captures everything except Enter (play+exit) and
+	// Esc (exit, restore full list). Playback keys stay silent here
+	// so typing a space doesn't toggle pause mid-query.
+	if m.searching {
+		switch {
+		case k == "enter":
+			m.searching = false
+			m.searchBox.Blur()
+			m.playCursor()
+			return m, nil
+		case k == "esc":
+			m.searching = false
+			m.searchBox.Blur()
+			m.searchBox.SetValue("")
+			m.applyFilter()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.searchBox, cmd = m.searchBox.Update(msg)
+		m.applyFilter()
+		return m, cmd
+	}
+	if is("search", k) {
+		m.searching = true
+		m.searchBox.Focus()
+		return m, nil
+	}
 	// Playback controls are global: they work from either pane.
 	// Only list navigation, detail scrolling, tab-focus and quit are scoped.
 	switch {
@@ -337,11 +420,11 @@ func (m *model) advance() {
 }
 
 func (m *model) playCursor() {
-	if len(m.tracks) == 0 {
+	if len(m.view) == 0 {
 		return
 	}
 	m.clampCursor()
-	if err := m.be.playFile(m.tracks[m.cursor].Path); err != nil {
+	if err := m.be.playFile(m.view[m.cursor].Path); err != nil {
 		m.beErr = err.Error()
 	}
 }
@@ -573,15 +656,19 @@ func (m model) View() string {
 	if m.indexErr != "" {
 		return styleError.Render("library: " + m.indexErr)
 	}
-	// Library list.
+	// Library list (current filter view, with fuzzy highlights).
 	var rows []string
 	vis := m.visibleRows()
 	playing := m.playingPath()
-	for i := m.offset; i < m.offset+vis && i < len(m.tracks); i++ {
-		t := m.tracks[i]
-		line := "  " + t.label()
+	for i := m.offset; i < m.offset+vis && i < len(m.view); i++ {
+		t := m.view[i]
+		base := t.label()
+		if m.searching && i < len(m.viewHL) {
+			base = fuzzyLine(t.label(), m.viewHL[i])
+		}
+		line := "  " + base
 		if t.Path == playing && playing != "" {
-			line = "▶ " + t.label()
+			line = "▶ " + base
 			if i == m.cursor {
 				rows = append(rows, styleSelected.Render(line))
 			} else {
@@ -599,7 +686,12 @@ func (m model) View() string {
 		rows = append(rows, "")
 	}
 	listBody := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	listTitle := styleMuted.Render(fmt.Sprintf(" library (%d) ", len(m.tracks)))
+	var listTitle string
+	if m.searching {
+		listTitle = m.searchBox.View()
+	} else {
+		listTitle = styleMuted.Render(fmt.Sprintf(" library (%d)  / search ", len(m.view)))
+	}
 	list := lipgloss.JoinVertical(lipgloss.Left, listTitle, listBody)
 	if m.focus == focusList {
 		list = styleFocusedBorder.Width(m.listOuterWidth() - 2).Render(list)

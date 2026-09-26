@@ -63,3 +63,26 @@ func TestNextTrackPath(t *testing.T) {
 		t.Fatalf("empty library should not advance")
 	}
 }
+
+func TestFuzzyFilter(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.tracks = []Track{
+		{Path: "/a", Artist: "Linkin Park", Title: "Papercut"},
+		{Path: "/b", Artist: "Linkin Park", Title: "Numb"},
+		{Path: "/c", Artist: "ABBA", Title: "Mamma Mia"},
+	}
+	m.view = m.tracks
+	m.searchBox.SetValue("papercut")
+	m.applyFilter()
+	if len(m.view) != 1 || m.view[0].Path != "/a" {
+		t.Fatalf("filter wrong: %+v", m.view)
+	}
+	if len(m.viewHL) != 1 || len(m.viewHL[0]) == 0 {
+		t.Fatalf("missing highlight indexes")
+	}
+	m.searchBox.SetValue("")
+	m.applyFilter()
+	if len(m.view) != 3 {
+		t.Fatalf("clear did not restore: %d", len(m.view))
+	}
+}
