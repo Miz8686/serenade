@@ -66,10 +66,12 @@ All rebindable in `config.toml`. Playback keys work from either pane.
 [theme]
 base = "mocha"   # mocha | mono (high-contrast)
 # accent = "#CBA6F7"   # any token overridable; per-track art accent wins
+# background_art = true  # blurred art behind Now Playing text (default off)
 
 [keys]
 quit = ["q", "ctrl+c"]
 # any action in ? overlay rebindable the same way
+# shuffle = ["s"]  # + clickable button in the status bar
 ```
 
 ## Layout
