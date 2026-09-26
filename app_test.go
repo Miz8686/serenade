@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -102,5 +103,17 @@ func TestPickNext(t *testing.T) {
 	// Empty everything: no advance.
 	if _, _, ok = pickNext(nil, nil, "/a"); ok {
 		t.Fatalf("empty should not advance")
+	}
+}
+
+func TestHelpOverlay(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.showHelp = true
+	out := m.View()
+	for _, want := range []string{"Fuzzy search", "Queue add", "Play selected"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("overlay missing %q", want)
+		}
 	}
 }

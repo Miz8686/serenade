@@ -56,6 +56,7 @@ type model struct {
 	queue     []string // in-memory play queue (paths); auto-advance drains it first
 	viewHL    [][]int  // per-row matched char indexes (fuzzy highlight)
 	searching bool
+	showHelp  bool // ? overlay, generated from cfg.keySets()
 	searchBox textinput.Model
 	focus     focusPane
 	width     int
@@ -298,6 +299,17 @@ func fuzzyLine(label string, idx []int) string {
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	is := m.cfg.keyIs
+	// Help overlay is modal: quit still quits, everything else either
+	// closes it or is swallowed so keys can't leak through.
+	if m.showHelp {
+		if is("quit", k) {
+			return m, tea.Quit
+		}
+		if k == "esc" || is("help", k) {
+			m.showHelp = false
+		}
+		return m, nil
+	}
 	// Search mode captures everything except Enter (play+exit) and
 	// Esc (exit, restore full list). Playback keys stay silent here
 	// so typing a space doesn't toggle pause mid-query.
@@ -368,6 +380,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusList
 			m.layoutPanes()
 			return m, nil
+		case is("help", k):
+			m.showHelp = true
+			return m, nil
 		}
 		var cmd tea.Cmd
 		m.detail, cmd = m.detail.Update(msg)
@@ -377,6 +392,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case is("tab", k):
 		m.focus = focusDetail
 		m.layoutPanes()
+		return m, nil
+	case is("help", k):
+		m.showHelp = true
 		return m, nil
 	case is("up", k):
 		m.cursor--
@@ -675,7 +693,23 @@ func fmtTime(s int) string {
 	return fmt.Sprintf("%d:%02d", s/60, s%60)
 }
 
+// helpView renders the keybind overlay from cfg.keySets — the same
+// effective map the config file produces, so docs can't drift.
+func (m model) helpView() string {
+	var b strings.Builder
+	b.WriteString(styleTitle.Render("keys") + "\n\n")
+	for _, ks := range m.cfg.keySets() {
+		b.WriteString(fmt.Sprintf("%-18s %s\n", ks.action, styleMuted.Render(strings.Join(ks.keys, " "))))
+	}
+	b.WriteString("\n" + styleMuted.Render("? / esc closes"))
+	box := styleFocusedBorder.Padding(1, 3).Render(strings.TrimRight(b.String(), "\n"))
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 func (m model) View() string {
+	if m.showHelp {
+		return m.helpView()
+	}
 	if m.width <= 0 {
 		return "loading…"
 	}
