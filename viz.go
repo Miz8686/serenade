@@ -14,6 +14,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -43,7 +44,7 @@ type vizTap struct {
 	running bool
 }
 
-func defaultMonitor() (string, error) {
+func defaultSink() (string, error) {
 	out, err := exec.Command("pactl", "get-default-sink").Output()
 	if err != nil {
 		return "", fmt.Errorf("pactl: %v", err)
@@ -55,7 +56,40 @@ func defaultMonitor() (string, error) {
 	if sink == "" {
 		return "", fmt.Errorf("no default sink")
 	}
-	return sink + ".monitor", nil
+	return sink, nil
+}
+
+// sinkSerial resolves a sink node NAME to its PipeWire serial id via
+// pw-dump. Required because pw-cat --target <monitor-name> does NOT
+// attach to the named monitor: monitors are ports on the sink node,
+// not nodes themselves, so the name never resolves and pw-cat silently
+// falls back to the default source (verified twice landing on
+// output.phone-mic-input while music played). The SINK's serial always
+// hits — pw-cat record mode taps its monitor ports. IDs shift across
+// graph rebuilds, so resolve fresh on every tap start; a dead tap
+// surfaces as an error and the next activation re-resolves.
+func sinkSerial(sinkName string) (string, error) {
+	out, err := exec.Command("pw-dump").Output()
+	if err != nil {
+		return "", fmt.Errorf("pw-dump: %v", err)
+	}
+	var objs []map[string]any
+	if err := json.Unmarshal(out, &objs); err != nil {
+		return "", err
+	}
+	for _, o := range objs {
+		if o["type"] != "PipeWire:Interface:Node" {
+			continue
+		}
+		info, _ := o["info"].(map[string]any)
+		props, _ := info["props"].(map[string]any)
+		if props["node.name"] == sinkName {
+			if id, ok := o["id"].(float64); ok {
+				return fmt.Sprint(int(id)), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no sink node named %s", sinkName)
 }
 
 func (t *vizTap) start() {
@@ -64,12 +98,17 @@ func (t *vizTap) start() {
 	if t.running {
 		return
 	}
-	mon, err := defaultMonitor()
+	sink, err := defaultSink()
 	if err != nil {
 		t.broken = err.Error()
 		return
 	}
-	cmd := exec.Command("pw-cat", "-r", "--target", mon,
+	target, err := sinkSerial(sink)
+	if err != nil {
+		t.broken = err.Error()
+		return
+	}
+	cmd := exec.Command("pw-cat", "-r", "--target", target,
 		"--format", "s16", "--rate", fmt.Sprint(vizRate),
 		"--channels", fmt.Sprint(vizChannels), "-")
 	stdout, err := cmd.StdoutPipe()

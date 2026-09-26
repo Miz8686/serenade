@@ -70,7 +70,7 @@ func TestSilenceFlat(t *testing.T) {
 }
 
 func TestMonitorResolve(t *testing.T) {
-	mon, err := defaultMonitor()
+	mon, err := defaultSink()
 	if err != nil {
 		t.Skipf("no pactl sink here: %v", err)
 	}
