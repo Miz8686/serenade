@@ -66,15 +66,20 @@ type model struct {
 	beErr     string
 	// Phase-2 art state. artImg holds cached pixels (never re-decoded);
 	// artBlock is the pre-rendered right-pane art section.
-	artImg   image.Image
-	artPrim  string
-	artSec   string
-	artBlock string
-	artFile  string
-	kitty    bool
-	kittyID  int
-	// appliedAc tracks the last applied "prim|sec" to avoid restyles.
+	artImg    image.Image
+	artPrim   string
+	artSec    string
+	artBlock  string
+	artFile   string
+	kitty     bool
+	kittyID   int
 	appliedAc string
+	// Phase-3 visualizer state.
+	tap       *vizTap
+	levels    []float64
+	peaks     []float64
+	vizActive bool
+	vizErr    string
 	focused   bool // terminal focus; false pauses background polling
 	detail    viewport.Model
 	bar       progress.Model
@@ -128,6 +133,7 @@ func newModel(be *backend, kitty bool, cfg Config) model {
 	return model{
 		be:        be,
 		cfg:       cfg,
+		tap:       &vizTap{},
 		searchBox: ti,
 		kitty:     kitty,
 		indexing:  true,
@@ -216,7 +222,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.syncDetail()
 				m.advance()
 				if m.focused {
-					return m, pollBackend(m.be)
+					return m, tea.Batch(pollBackend(m.be), m.syncViz())
 				}
 				return m, nil
 			}
@@ -228,22 +234,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.syncDetail()
 		if m.focused {
-			return m, pollBackend(m.be)
+			return m, tea.Batch(pollBackend(m.be), m.syncViz())
 		}
 		return m, nil
 
 	case tea.FocusMsg:
 		m.focused = true
-		return m, pollBackend(m.be)
+		return m, tea.Batch(pollBackend(m.be), m.syncViz())
 
 	case tea.BlurMsg:
 		// Terminal unfocused: stop scheduling polls. The in-flight
 		// statusMsg that arrives simply won't re-arm the ticker.
 		m.focused = false
-		return m, nil
+		return m, m.syncViz()
 
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
+
+	case vizTickMsg:
+		if !m.vizActive || !m.shouldViz() {
+			m.tap.stop()
+			m.vizActive = false
+			m.levels, m.peaks = nil, nil
+			return m, nil
+		}
+		if frame := m.tap.frame(vizFFTSize); frame != nil {
+			bars := m.vizBars()
+			m.levels = fftLevels(frame, vizRate, bars)
+			if len(m.peaks) != len(m.levels) {
+				m.peaks = make([]float64, len(m.levels))
+			}
+			for i, l := range m.levels {
+				if l > m.peaks[i] {
+					m.peaks[i] = l
+				} else {
+					m.peaks[i] *= vizDecay
+				}
+			}
+		}
+		return m, m.vizTick()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -530,12 +559,131 @@ func (m model) listOuterWidth() int { return max(20, m.width*60/100) }
 func (m model) listInnerWidth() int { return max(1, m.listOuterWidth()-2) }
 func (m model) statusH() int        { return 4 }
 
+type vizTickMsg struct{}
+
+// vizBars returns the bar count for the current width: one column +
+// one gutter per bar.
+func (m model) vizBars() int {
+	inner := max(10, m.width-m.listOuterWidth()-2)
+	return max(8, min(48, inner/2))
+}
+
+// shouldViz gates all FFT work: playing, focused, backend healthy.
+func (m model) shouldViz() bool {
+	return m.status.State == "playing" && m.focused && m.beErr == ""
+}
+
+// syncViz starts/stops the tap + tick loop on state transitions.
+// Idempotent: steady state returns nil.
+func (m *model) syncViz() tea.Cmd {
+	want := m.shouldViz()
+	if want && !m.vizActive {
+		m.tap.start()
+		if _, broken := m.tap.state(); broken != "" {
+			m.vizErr = broken
+			m.vizActive = false
+			return nil
+		}
+		m.vizErr = ""
+		m.vizActive = true
+		m.peaks = nil
+		return m.vizTick()
+	}
+	if !want && m.vizActive {
+		m.tap.stop()
+		m.vizActive = false
+		m.levels = nil
+		m.peaks = nil
+	}
+	return nil
+}
+
+func (m *model) vizTick() tea.Cmd {
+	return tea.Tick(40*time.Millisecond, func(time.Time) tea.Msg {
+		return vizTickMsg{}
+	})
+}
+
+// hexLerp interpolates two #rrggbb colors by t in [0,1].
+func hexLerp(a, b string, t float64) (int, int, int) {
+	var ar, ag, ab, br, bg, bb int
+	fmt.Sscanf(a, "#%02x%02x%02x", &ar, &ag, &ab)
+	fmt.Sscanf(b, "#%02x%02x%02x", &br, &bg, &bb)
+	return int(float64(ar) + float64(br-ar)*t),
+		int(float64(ag) + float64(bg-ag)*t),
+		int(float64(ab) + float64(bb-ab)*t)
+}
+
+// vizAccent returns the live bar colors: current track accent pair,
+// falling back to theme tokens.
+func (m model) vizAccent() (string, string) {
+	a, b := m.artPrim, m.artSec
+	if a == "" {
+		a = themeBase.Accent
+	}
+	if b == "" {
+		b = themeBase.Accent2
+	}
+	return a, b
+}
+
+// renderViz builds the fixed-height strip: gradient bars with
+// peak-hold markers, idle/error states when the loop is off.
+func (m model) renderViz() string {
+	bars := m.vizBars()
+	inner := max(10, m.width-m.listOuterWidth()-2)
+	if !m.vizActive {
+		msg := "paused"
+		if m.vizErr != "" {
+			return styleError.Render("visualizer: "+m.vizErr) + "\n" + strings.Repeat("\n", vizHeight-1)
+		}
+		if m.status.State == "playing" && !m.focused {
+			msg = "paused (unfocused)"
+		}
+		line := styleMuted.Render("♪ " + msg)
+		out := line + "\n"
+		for i := 1; i < vizHeight; i++ {
+			out += "\n"
+		}
+		return out
+	}
+	a, b := m.vizAccent()
+	var sb strings.Builder
+	for r := vizHeight - 1; r >= 0; r-- {
+		frac := float64(r+1) / float64(vizHeight)
+		cr, cg, cb := hexLerp(a, b, frac)
+		for i := 0; i < bars && i*2 < inner; i++ {
+			lvl := 0.0
+			if i < len(m.levels) {
+				lvl = m.levels[i]
+			}
+			peak := 0.0
+			if i < len(m.peaks) {
+				peak = m.peaks[i]
+			}
+			h := lvl * float64(vizHeight)
+			prow := peak * float64(vizHeight)
+			switch {
+			case float64(r)+1 <= h:
+				fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm█", cr, cg, cb)
+			case prow > h && float64(r) < prow && float64(r)+1 >= prow:
+				fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm─", cr, cg, cb)
+			default:
+				sb.WriteString(" ")
+			}
+			sb.WriteString(" ")
+		}
+		sb.WriteString("\x1b[0m\n")
+	}
+	return sb.String()
+}
+
 func (m *model) layoutPanes() {
 	rightW := max(20, m.width-m.listOuterWidth())
 	rightInnerH := max(8, m.height-m.statusH()-2)
 	_, artRows := m.artBox()
 	m.detail.Width = max(10, rightW-2)
-	m.detail.Height = max(3, rightInnerH-artRows)
+	m.detail.Height = max(3, rightInnerH-artRows-vizHeight)
 	m.syncDetail()
 }
 
@@ -762,9 +910,9 @@ func (m model) View() string {
 		list = styleBlurBorder.Width(m.listOuterWidth() - 2).Render(list)
 	}
 
-	// Right pane: art block on top, Now Playing text below it, with
-	// vertical room left under the block for Phase 3's spectrograph.
-	right := lipgloss.JoinVertical(lipgloss.Left, m.artBlock, m.detail.View())
+	// Right pane: art block on top, Now Playing text below it, then
+	// the Phase-3 visualizer strip at the bottom.
+	right := lipgloss.JoinVertical(lipgloss.Left, m.artBlock, m.detail.View(), m.renderViz())
 	if m.focus == focusDetail {
 		right = styleFocusedBorder.Width(m.detail.Width).Render(right)
 	} else {

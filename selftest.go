@@ -30,6 +30,10 @@ func selftest() int {
 		return fail("status: %v", err)
 	}
 	fmt.Printf("ok: status=%q file=%q\n", st.State, st.File)
+	if msg := vizSmoke(); msg != "" {
+		return fail("viz: %s", msg)
+	}
+	fmt.Println("ok: viz tap+fft smoke")
 	m := newModel(be, false, defaultConfig())
 	m.tracks = tracks
 	m.indexing = false
@@ -46,6 +50,45 @@ func selftest() int {
 	fmt.Println("ok: mouse geometry (click/double-click/wheel gating)")
 	fmt.Println("SELFTEST PASS")
 	return 0
+}
+
+// vizSmoke starts the tap, waits for real frames, times FFT cost.
+// Proves the tap+FFT path against live PipeWire; fails honestly when
+// nothing is playing (no signal to measure).
+func vizSmoke() string {
+	t := &vizTap{}
+	t.start()
+	defer t.stop()
+	if _, broken := t.state(); broken != "" {
+		return "tap: " + broken
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	var frame []float64
+	for time.Now().Before(deadline) {
+		if frame = t.frame(vizFFTSize); frame != nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if frame == nil {
+		return "no frames in 4s (paused? tap buffering?)"
+	}
+	t0 := time.Now()
+	for i := 0; i < 100; i++ {
+		c := append([]float64(nil), frame...)
+		fftLevels(c, vizRate, 24)
+	}
+	per := time.Since(t0) / 100
+	levels := fftLevels(append([]float64(nil), frame...), vizRate, 24)
+	peak, sum := 0.0, 0.0
+	for _, l := range levels {
+		sum += l
+		if l > peak {
+			peak = l
+		}
+	}
+	fmt.Printf("ok: fft 100x avg %v/frame, live peak %.2f mean %.3f\n", per, peak, sum/float64(len(levels)))
+	return ""
 }
 
 // mouseCheck drives handleMouse with synthetic events against a known
