@@ -82,6 +82,11 @@ func ensureBackend() (*backend, error) {
 	}
 	b.log = log
 	b.cmd = exec.Command("cmus", "--listen", sock)
+	// NOTE (verified): the backend lives only as long as this app.
+	// cmus is an ncurses program; when the pty master closes at quit,
+	// its terminal I/O fails and it exits even with SIGHUP ignored
+	// (tried). So quit means stop-then-quit (see stop()), and a fresh
+	// backend spawns on next launch (~1s). No orphan daemons by design.
 	// cmus is an ncurses program: without a terminal it wedges or
 	// crashes (observed: prompt-block then realloc crash). Give it a
 	// private pty whose output goes to the log; the socket is the only
@@ -204,6 +209,15 @@ func (b *backend) playFile(path string) error { _, err := b.runRemote("-f", path
 func (b *backend) toggle() error {
 	_, err := b.runRemote("-C", "player-pause")
 	return err
+}
+
+// stop halts playback. Called on quit: the backend cannot outlive the
+// UI (its terminal dies with it), so quit means stop-then-quit.
+func (b *backend) stop() {
+	if b == nil {
+		return
+	}
+	_, _ = b.runRemote("-C", "player-stop")
 }
 func (b *backend) next() error { _, err := b.runRemote("-C", "player-next"); return err }
 func (b *backend) prev() error { _, err := b.runRemote("-C", "player-prev"); return err }

@@ -32,6 +32,7 @@ var (
 	styleBlurBorder    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
 	styleSelected      = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
 	stylePlaying       = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL            = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted         = lipgloss.NewStyle().Foreground(colMuted)
 	styleTitle         = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleError         = lipgloss.NewStyle().Foreground(colError)
@@ -114,6 +115,7 @@ func buildBaseStyles() {
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted = lipgloss.NewStyle().Foreground(colMuted)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleError = lipgloss.NewStyle().Foreground(colError)
@@ -317,7 +319,7 @@ func fuzzyLine(label string, idx []int) string {
 	runes := []rune(label)
 	for i, r := range runes {
 		if hit[i] {
-			b.WriteString(stylePlaying.Render(string(r)))
+			b.WriteString(styleHL.Render(string(r)))
 		} else {
 			b.WriteRune(r)
 		}
@@ -332,6 +334,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// closes it or is swallowed so keys can't leak through.
 	if m.showHelp {
 		if is("quit", k) {
+			m.be.stop()
 			return m, tea.Quit
 		}
 		if k == "esc" || is("help", k) {
@@ -347,6 +350,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case k == "enter":
 			m.searching = false
 			m.searchBox.Blur()
+			m.searchBox.SetValue("")
+			m.applyFilter()
 			m.playCursor()
 			return m, nil
 		case k == "esc":
@@ -370,6 +375,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Only list navigation, detail scrolling, tab-focus and quit are scoped.
 	switch {
 	case is("quit", k):
+		m.be.stop()
 		return m, tea.Quit
 	case is("toggle", k):
 		_ = m.be.toggle()
@@ -633,19 +639,24 @@ func (m model) renderViz() string {
 	bars := m.vizBars()
 	inner := max(10, m.width-m.listOuterWidth()-2)
 	if !m.vizActive {
-		msg := "paused"
 		if m.vizErr != "" {
 			return styleError.Render("visualizer: "+m.vizErr) + "\n" + strings.Repeat("\n", vizHeight-1)
 		}
-		if m.status.State == "playing" && !m.focused {
-			msg = "paused (unfocused)"
+		// Resting baseline, not missing: flat zero-height bars in the
+		// live accent color across every column.
+		a, _ := m.vizAccent()
+		var cr, cg, cb int
+		fmt.Sscanf(a, "#%02x%02x%02x", &cr, &cg, &cb)
+		var sb strings.Builder
+		for r := 0; r < vizHeight-1; r++ {
+			sb.WriteString("\n")
 		}
-		line := styleMuted.Render("♪ " + msg)
-		out := line + "\n"
-		for i := 1; i < vizHeight; i++ {
-			out += "\n"
+		fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm", cr, cg, cb)
+		for i := 0; i < bars; i++ {
+			sb.WriteString("─ ")
 		}
-		return out
+		sb.WriteString("\x1b[0m\n")
+		return sb.String()
 	}
 	a, b := m.vizAccent()
 	var sb strings.Builder
@@ -680,11 +691,16 @@ func (m model) renderViz() string {
 
 func (m *model) layoutPanes() {
 	rightW := max(20, m.width-m.listOuterWidth())
+	m.detail.Width = max(10, rightW-2)
+	m.syncDetail()
+}
+
+// maxTextH is the tallest the Now Playing viewport may grow: whatever
+// remains after the fixed art and visualizer reservations.
+func (m model) maxTextH() int {
 	rightInnerH := max(8, m.height-m.statusH()-2)
 	_, artRows := m.artBox()
-	m.detail.Width = max(10, rightW-2)
-	m.detail.Height = max(3, rightInnerH-artRows-vizHeight)
-	m.syncDetail()
+	return max(3, rightInnerH-artRows-vizHeight)
 }
 
 // applyAccent pushes a per-track accent into selection, progress and
@@ -705,6 +721,7 @@ func (m *model) applyAccent(prim, sec string) {
 	colAccent2 = lipgloss.Color(sec)
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
 	m.bar = progress.New(
@@ -831,7 +848,13 @@ func (m *model) syncDetail() {
 	if len(m.queue) > 0 {
 		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
 	}
-	m.detail.SetContent(b.String())
+	content := b.String()
+	// Fit the viewport to its content so no dead blank gap pools
+	// between the text and the visualizer strip. Scrolling still
+	// works when content exceeds the reservation.
+	lines := strings.Count(content, "\n") + 1
+	m.detail.Height = min(max(3, lines), m.maxTextH())
+	m.detail.SetContent(content)
 }
 
 func fmtTime(s int) string {
@@ -873,13 +896,14 @@ func (m model) View() string {
 	playing := m.playingPath()
 	for i := m.offset; i < m.offset+vis && i < len(m.view); i++ {
 		t := m.view[i]
-		base := t.label()
-		if m.searching && i < len(m.viewHL) {
-			base = fuzzyLine(t.label(), m.viewHL[i])
-		}
-		line := "  " + base
+		// One style per row, never nested: nested lipgloss spans emit
+		// mid-line resets that fracture the outer row style (verified:
+		// partial highlight blocks + gaps). Playing rows and the cursor
+		// row render plain labels under their own style; fuzzy spans
+		// only ever appear on otherwise-unstyled rows, and only while
+		// a search is active (viewHL is cleared with the query).
 		if t.Path == playing && playing != "" {
-			line = "▶ " + base
+			line := "▶ " + t.label()
 			if i == m.cursor {
 				rows = append(rows, styleSelected.Render(line))
 			} else {
@@ -888,9 +912,11 @@ func (m model) View() string {
 			continue
 		}
 		if i == m.cursor {
-			rows = append(rows, styleSelected.Render(line))
+			rows = append(rows, styleSelected.Render("  "+t.label()))
+		} else if m.searching && i < len(m.viewHL) {
+			rows = append(rows, "  "+fuzzyLine(t.label(), m.viewHL[i]))
 		} else {
-			rows = append(rows, " "+line)
+			rows = append(rows, "  "+t.label())
 		}
 	}
 	for len(rows) < vis {
@@ -910,9 +936,9 @@ func (m model) View() string {
 		list = styleBlurBorder.Width(m.listOuterWidth() - 2).Render(list)
 	}
 
-	// Right pane: art block on top, Now Playing text below it, then
-	// the Phase-3 visualizer strip at the bottom.
-	right := lipgloss.JoinVertical(lipgloss.Left, m.artBlock, m.detail.View(), m.renderViz())
+	// Right pane, top to bottom: Now Playing text, visualizer strip,
+	// cover art anchored at the bottom.
+	right := lipgloss.JoinVertical(lipgloss.Left, m.detail.View(), m.renderViz(), m.artBlock)
 	if m.focus == focusDetail {
 		right = styleFocusedBorder.Width(m.detail.Width).Render(right)
 	} else {
