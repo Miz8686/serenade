@@ -52,8 +52,9 @@ type model struct {
 	indexErr  string
 	cursor    int
 	offset    int
-	view      []Track // displayed rows: full library or live fuzzy filter
-	viewHL    [][]int // per-row matched char indexes (fuzzy highlight)
+	view      []Track  // displayed rows: full library or live fuzzy filter
+	queue     []string // in-memory play queue (paths); auto-advance drains it first
+	viewHL    [][]int  // per-row matched char indexes (fuzzy highlight)
 	searching bool
 	searchBox textinput.Model
 	focus     focusPane
@@ -355,6 +356,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.playCursor()
 			return m, nil
 		}
+	case is("queue", k):
+		m.enqueueCursor()
+		m.syncDetail()
+		return m, nil
 	}
 	// Detail pane gets navigation keys when focused.
 	if m.focus == focusDetail {
@@ -409,14 +414,35 @@ func nextTrackPath(tracks []Track, prevFile string) (string, bool) {
 	return "", false
 }
 
+// pickNext is the single "what plays next" decision: queued head
+// first, otherwise next-in-library-order. Pure for testability.
+func pickNext(queue []string, tracks []Track, prevFile string) (next string, rest []string, ok bool) {
+	if len(queue) > 0 {
+		return queue[0], queue[1:], true
+	}
+	next, ok = nextTrackPath(tracks, prevFile)
+	return next, queue, ok
+}
+
 func (m *model) advance() {
-	next, ok := nextTrackPath(m.tracks, m.prev.File)
+	next, rest, ok := pickNext(m.queue, m.tracks, m.prev.File)
 	if !ok {
 		return
 	}
+	m.queue = rest
 	if err := m.be.playFile(next); err != nil {
 		m.beErr = err.Error()
 	}
+}
+
+// enqueueCursor appends the cursor's track (current filter view) to
+// the play queue.
+func (m *model) enqueueCursor() {
+	if len(m.view) == 0 {
+		return
+	}
+	m.clampCursor()
+	m.queue = append(m.queue, m.view[m.cursor].Path)
 }
 
 func (m *model) playCursor() {
@@ -635,6 +661,9 @@ func (m *model) syncDetail() {
 			fmt.Fprintf(&b, "%s\n", styleMuted.Render(m.status.Album))
 		}
 		fmt.Fprintf(&b, "\n%s\n", styleMuted.Render(m.status.File))
+	}
+	if len(m.queue) > 0 {
+		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
 	}
 	m.detail.SetContent(b.String())
 }

@@ -86,3 +86,21 @@ func TestFuzzyFilter(t *testing.T) {
 		t.Fatalf("clear did not restore: %d", len(m.view))
 	}
 }
+
+func TestPickNext(t *testing.T) {
+	tr := []Track{{Path: "/a"}, {Path: "/b"}}
+	// Queue drains first, preserving order.
+	n, rest, ok := pickNext([]string{"/q1", "/q2"}, tr, "/a")
+	if !ok || n != "/q1" || len(rest) != 1 || rest[0] != "/q2" {
+		t.Fatalf("queue drain: %q %v %v", n, rest, ok)
+	}
+	// Empty queue falls back to library order.
+	n, rest, ok = pickNext(nil, tr, "/a")
+	if !ok || n != "/b" || len(rest) != 0 {
+		t.Fatalf("fallback: %q %v %v", n, rest, ok)
+	}
+	// Empty everything: no advance.
+	if _, _, ok = pickNext(nil, nil, "/a"); ok {
+		t.Fatalf("empty should not advance")
+	}
+}
