@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -59,6 +60,7 @@ type model struct {
 	viewHL    [][]int  // per-row matched char indexes (fuzzy highlight)
 	searching bool
 	showHelp  bool // ? overlay, generated from cfg.keySets()
+	shuf      shuffleState
 	searchBox textinput.Model
 	focus     focusPane
 	width     int
@@ -427,6 +429,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enqueueCursor()
 		m.syncDetail()
 		return m, nil
+	case is("shuffle", k):
+		m.toggleShuffle()
+		m.syncDetail()
+		return m, nil
 	}
 	// Detail pane gets navigation keys when focused.
 	if m.focus == focusDetail {
@@ -487,18 +493,77 @@ func nextTrackPath(tracks []Track, prevFile string) (string, bool) {
 	return "", false
 }
 
-// pickNext is the single "what plays next" decision: queued head
-// first, otherwise next-in-library-order. Pure for testability.
-func pickNext(queue []string, tracks []Track, prevFile string) (next string, rest []string, ok bool) {
+// shuffleState is a shuffle-bag: Fisher-Yates order walked once,
+// reshuffled on exhaustion. Independent random picks cluster and
+// repeat; a bag guarantees every track plays before any repeats.
+type shuffleState struct {
+	on    bool
+	order []int
+	pos   int
+}
+
+// freshBag builds a shuffled index order. When reshuffling, the first
+// element avoids repeating the just-played tail track when possible.
+func freshBag(n int, avoidIdx int) []int {
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	for i := n - 1; i > 0; i-- {
+		j := randInt(i + 1)
+		order[i], order[j] = order[j], order[i]
+	}
+	if n > 1 && order[0] == avoidIdx {
+		order[0], order[1] = order[1], order[0]
+	}
+	return order
+}
+
+// randInt returns [0,n) using the auto-seeded global source.
+func randInt(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	return rand.Intn(n)
+}
+
+// pickNext is the single "what plays next" decision, in precedence
+// order: explicit queue head, shuffle bag, library order.
+func pickNext(queue []string, tracks []Track, prevFile string, shuf *shuffleState) (next string, rest []string, ok bool) {
 	if len(queue) > 0 {
 		return queue[0], queue[1:], true
+	}
+	if shuf != nil && shuf.on {
+		if len(shuf.order) != len(tracks) {
+			shuf.order = freshBag(len(tracks), -1)
+			shuf.pos = 0
+		}
+		if len(shuf.order) == 0 {
+			return "", queue, false
+		}
+		if shuf.pos >= len(shuf.order) {
+			prevIdx := -1
+			for i, t := range tracks {
+				if t.Path == prevFile {
+					prevIdx = i
+				}
+			}
+			shuf.order = freshBag(len(tracks), prevIdx)
+			shuf.pos = 0
+		}
+		idx := shuf.order[shuf.pos]
+		shuf.pos++
+		if idx < 0 || idx >= len(tracks) {
+			return "", queue, false
+		}
+		return tracks[idx].Path, queue, true
 	}
 	next, ok = nextTrackPath(tracks, prevFile)
 	return next, queue, ok
 }
 
 func (m *model) advance() {
-	next, rest, ok := pickNext(m.queue, m.tracks, m.prev.File)
+	next, rest, ok := pickNext(m.queue, m.tracks, m.prev.File, &m.shuf)
 	if !ok {
 		return
 	}
@@ -510,6 +575,35 @@ func (m *model) advance() {
 
 // enqueueCursor appends the cursor's track (current filter view) to
 // the play queue.
+// toggleShuffle flips shuffle mode. Turning on while idle starts
+// playback immediately on a random track ("hit it and it just
+// works"); otherwise only future advances are affected. Turning off
+// never interrupts the current track.
+func (m *model) toggleShuffle() {
+	if m.shuf.on {
+		m.shuf.on = false
+		m.shuf.order = nil
+		m.shuf.pos = 0
+		return
+	}
+	if len(m.tracks) == 0 {
+		return
+	}
+	m.shuf.on = true
+	m.shuf.order = freshBag(len(m.tracks), -1)
+	m.shuf.pos = 0
+	if m.status.File == "" {
+		next, rest, ok := pickNext(m.queue, m.tracks, "", &m.shuf)
+		m.queue = rest
+		if !ok {
+			return
+		}
+		if err := m.be.playFile(next); err != nil {
+			m.beErr = err.Error()
+		}
+	}
+}
+
 func (m *model) enqueueCursor() {
 	if len(m.view) == 0 {
 		return
@@ -552,6 +646,8 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					_ = m.be.toggle()
 				case "next":
 					_ = m.be.next()
+				case "shuffle":
+					m.toggleShuffle()
 				}
 				return m, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
 					return flashMsg{}
@@ -891,6 +987,9 @@ func (m *model) syncDetail() {
 	if len(m.queue) > 0 {
 		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
 	}
+	if m.shuf.on {
+		fmt.Fprintf(&b, "%s\n", stylePlaying.Render("⇄ shuffle on"))
+	}
 	content := b.String()
 	// Fit the viewport to its content so no dead blank gap pools
 	// between the text and the visualizer strip. Scrolling still
@@ -956,6 +1055,15 @@ func (m model) statusLine() (string, []btnZone) {
 	b.WriteString(" ")
 	pos++
 	button("⏭", "next")
+	b.WriteString(" ")
+	pos++
+	shufCell := " ⇄ "
+	zones = append(zones, btnZone{pos, pos + runewidth.StringWidth(shufCell), "shuffle"})
+	if m.shuf.on {
+		shufCell = styleSelected.Render(shufCell)
+	}
+	b.WriteString(shufCell)
+	pos += runewidth.StringWidth(shufCell)
 	rest := fmt.Sprintf(" │ %s / %s   %s",
 		fmtTime(m.status.Position), fmtTime(m.status.Duration), m.status.State)
 	if m.status.State == "" {

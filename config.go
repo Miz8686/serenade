@@ -48,6 +48,7 @@ type Keys struct {
 	VolUp    []string `toml:"vol_up"`
 	VolDown  []string `toml:"vol_down"`
 	Search   []string `toml:"search"`
+	Shuffle  []string `toml:"shuffle"`
 	Queue    []string `toml:"queue"`
 	Help     []string `toml:"help"`
 }
@@ -81,7 +82,7 @@ func defaultKeys() Keys {
 		Next: []string{"n"}, Prev: []string{"p"},
 		SeekBack: []string{"left", "h"}, SeekFwd: []string{"right", "l"},
 		VolUp: []string{"+", "="}, VolDown: []string{"-", "_"},
-		Search: []string{"/"}, Queue: []string{"a"},
+		Search: []string{"/"}, Shuffle: []string{"s"}, Queue: []string{"a"},
 		Help: []string{"?"},
 	}
 }
@@ -104,6 +105,7 @@ func (c Config) keySets() []keySet {
 		{"Seek ∓5s", append(append([]string{}, k.SeekBack...), k.SeekFwd...)},
 		{"Volume", append(append([]string{}, k.VolUp...), k.VolDown...)},
 		{"Fuzzy search", k.Search},
+		{"Shuffle", k.Shuffle},
 		{"Queue add", k.Queue},
 		{"Focus pane", k.Tab},
 		{"Help", k.Help},
@@ -153,6 +155,8 @@ func (c Config) keyIs(action, key string) bool {
 		set = c.Keys.VolDown
 	case "search":
 		set = c.Keys.Search
+	case "shuffle":
+		set = c.Keys.Shuffle
 	case "queue":
 		set = c.Keys.Queue
 	case "help":
@@ -243,6 +247,7 @@ func loadConfig() Config {
 	merge(&k.VolUp, fk.VolUp)
 	merge(&k.VolDown, fk.VolDown)
 	merge(&k.Search, fk.Search)
+	merge(&k.Shuffle, fk.Shuffle)
 	merge(&k.Queue, fk.Queue)
 	merge(&k.Help, fk.Help)
 	return c

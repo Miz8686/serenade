@@ -93,17 +93,17 @@ func TestFuzzyFilter(t *testing.T) {
 func TestPickNext(t *testing.T) {
 	tr := []Track{{Path: "/a"}, {Path: "/b"}}
 	// Queue drains first, preserving order.
-	n, rest, ok := pickNext([]string{"/q1", "/q2"}, tr, "/a")
+	n, rest, ok := pickNext([]string{"/q1", "/q2"}, tr, "/a", nil)
 	if !ok || n != "/q1" || len(rest) != 1 || rest[0] != "/q2" {
 		t.Fatalf("queue drain: %q %v %v", n, rest, ok)
 	}
 	// Empty queue falls back to library order.
-	n, rest, ok = pickNext(nil, tr, "/a")
+	n, rest, ok = pickNext(nil, tr, "/a", nil)
 	if !ok || n != "/b" || len(rest) != 0 {
 		t.Fatalf("fallback: %q %v %v", n, rest, ok)
 	}
 	// Empty everything: no advance.
-	if _, _, ok = pickNext(nil, nil, "/a"); ok {
+	if _, _, ok = pickNext(nil, nil, "/a", nil); ok {
 		t.Fatalf("empty should not advance")
 	}
 }
@@ -135,5 +135,58 @@ func TestPlayingRowDistinct(t *testing.T) {
 	}
 	if playing == plain || cursor == plain {
 		t.Fatalf("styled rows must differ from plain text")
+	}
+}
+
+func TestShuffleBag(t *testing.T) {
+	tr := []Track{{Path: "/a"}, {Path: "/b"}, {Path: "/c"}, {Path: "/d"}}
+	sh := &shuffleState{on: true, order: freshBag(len(tr), -1)}
+	seen := map[string]bool{}
+	for i := 0; i < len(tr); i++ {
+		n, rest, ok := pickNext(nil, tr, "", sh)
+		if !ok {
+			t.Fatalf("bag walk stopped at %d", i)
+		}
+		if seen[n] {
+			t.Fatalf("repeat within one pass: %q", n)
+		}
+		seen[n] = true
+		_ = rest
+	}
+	if len(seen) != len(tr) {
+		t.Fatalf("bag covered %d/%d", len(seen), len(tr))
+	}
+	// Exhaustion reshuffles instead of stopping.
+	n, _, ok := pickNext(nil, tr, "", sh)
+	if !ok || n == "" {
+		t.Fatalf("reshuffle failed")
+	}
+}
+
+func TestShuffleReshuffleBoundary(t *testing.T) {
+	// 50 trials: after exhaustion, first track of the new pass must
+	// not equal the last track of the old pass (when avoidable).
+	for trial := 0; trial < 50; trial++ {
+		tr := []Track{{Path: "/a"}, {Path: "/b"}, {Path: "/c"}}
+		sh := &shuffleState{on: true, order: []int{0, 1, 2}, pos: 3}
+		n, _, ok := pickNext(nil, tr, "/c", sh)
+		if !ok {
+			t.Fatalf("reshuffle failed")
+		}
+		if n == "/c" {
+			t.Fatalf("boundary repeat: new pass starts with just-played track")
+		}
+	}
+}
+
+func TestQueueBeatsShuffle(t *testing.T) {
+	tr := []Track{{Path: "/a"}, {Path: "/b"}}
+	sh := &shuffleState{on: true, order: []int{1, 0}, pos: 0}
+	n, rest, ok := pickNext([]string{"/q"}, tr, "/a", sh)
+	if !ok || n != "/q" || len(rest) != 0 {
+		t.Fatalf("queue must win: %q %v", n, rest)
+	}
+	if sh.pos != 0 {
+		t.Fatalf("queue drain must not consume bag position")
 	}
 }
