@@ -16,8 +16,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +134,13 @@ func cachedArt(path string) (image.Image, string, string, error) {
 	_ = os.WriteFile(imgPath, buf.Bytes(), 0o644)
 	_ = os.WriteFile(accPath, []byte(prim+"\n"+sec+"\n"), 0o644)
 	return dst, prim, sec, nil
+}
+
+func toRGBA(img image.Image) *image.RGBA {
+	b := img.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(out, out.Bounds(), img, b.Min, draw.Src)
+	return out
 }
 
 // accentPair buckets hue (36 buckets), weights by saturation*value,
@@ -268,7 +277,118 @@ func hsvToRgb(h, s, v float64) (r, g, b float64) {
 	}
 }
 
-// renderHalfBlock maps img onto cols×rows terminal cells. Each cell is
+// boxBlurPass applies one separable box-blur pass (horizontal then
+// vertical) at the given radius, with edge clamping and a constant
+// divisor. Three passes approximate a Gaussian closely enough for
+// background art — ~35ms on the small cached image, paid once per
+// track (result is disk-cached), never per frame.
+func boxBlurPass(img *image.RGBA, r int) *image.RGBA {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	span := 2*r + 1
+	at := func(x, y int) (int, int, int, int) {
+		cr, cg, cb, ca := img.RGBAAt(min(max(x, 0), w-1), min(max(y, 0), h-1)).RGBA()
+		return int(cr >> 8), int(cg >> 8), int(cb >> 8), int(ca >> 8)
+	}
+	tmp := image.NewRGBA(b)
+	for y := 0; y < h; y++ {
+		sr, sg, sb, sa := 0, 0, 0, 0
+		for x := -r; x < r; x++ {
+			cr, cg, cb, ca := at(x, y)
+			sr, sg, sb, sa = sr+cr, sg+cg, sb+cb, sa+ca
+		}
+		for ox := 0; ox < w; ox++ {
+			cr, cg, cb, ca := at(ox+r, y)
+			sr, sg, sb, sa = sr+cr, sg+cg, sb+cb, sa+ca
+			lr, lg, lb, la := at(ox-r-1, y)
+			sr, sg, sb, sa = sr-lr, sg-lg, sb-lb, sa-la
+			tmp.SetRGBA(ox, y, color.RGBA{uint8(sr / span), uint8(sg / span), uint8(sb / span), uint8(sa / span)})
+		}
+	}
+	out := image.NewRGBA(b)
+	for x := 0; x < w; x++ {
+		sr, sg, sb, sa := 0, 0, 0, 0
+		add := func(x, y int) {
+			cr, cg, cb, ca := tmp.RGBAAt(x, y).RGBA()
+			sr += int(cr >> 8)
+			sg += int(cg >> 8)
+			sb += int(cb >> 8)
+			sa += int(ca >> 8)
+		}
+		sub := func(x, y int) {
+			cr, cg, cb, ca := tmp.RGBAAt(x, y).RGBA()
+			sr -= int(cr >> 8)
+			sg -= int(cg >> 8)
+			sb -= int(cb >> 8)
+			sa -= int(ca >> 8)
+		}
+		for y := -r; y < r; y++ {
+			yy := min(max(y, 0), h-1)
+			cr, cg, cb, ca := tmp.RGBAAt(x, yy).RGBA()
+			sr, sg, sb, sa = sr+int(cr>>8), sg+int(cg>>8), sb+int(cb>>8), sa+int(ca>>8)
+		}
+		for oy := 0; oy < h; oy++ {
+			add(x, min(max(oy+r, 0), h-1))
+			sub(x, min(max(oy-r-1, 0), h-1))
+			out.SetRGBA(x, oy, color.RGBA{uint8(sr / span), uint8(sg / span), uint8(sb / span), uint8(sa / span)})
+		}
+	}
+	return out
+}
+
+// blurCached applies 3 blur passes to a cached-size image.
+func blurCached(img image.Image) *image.RGBA {
+	b := img.Bounds()
+	base := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(base, base.Bounds(), img, b.Min, draw.Src)
+	out := base
+	for i := 0; i < 3; i++ {
+		out = boxBlurPass(out, 8)
+	}
+	return out
+}
+
+// scrimToward blends img toward the base color at the given art
+// opacity (0.35 ≈ 35% art, 65% base) — the readability trick.
+func scrimToward(img *image.RGBA, baseHex string, opacity float64) *image.RGBA {
+	var br, bg, bb int
+	fmt.Sscanf(baseHex, "#%02x%02x%02x", &br, &bg, &bb)
+	b := img.Bounds()
+	out := image.NewRGBA(b)
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			cr, cg, cb, _ := img.RGBAAt(x, y).RGBA()
+			r := int(float64(cr>>8)*opacity + float64(br)*(1-opacity))
+			g := int(float64(cg>>8)*opacity + float64(bg)*(1-opacity))
+			bl := int(float64(cb>>8)*opacity + float64(bb)*(1-opacity))
+			out.SetRGBA(x, y, color.RGBA{uint8(r), uint8(g), uint8(bl), 255})
+		}
+	}
+	return out
+}
+
+// contrastRatio returns the WCAG relative-luminance ratio of two
+// #rrggbb colors (1..21).
+func contrastRatio(fgHex, bgHex string) float64 {
+	lum := func(h string) float64 {
+		var r, g, b int
+		fmt.Sscanf(h, "#%02x%02x%02x", &r, &g, &b)
+		lin := func(v int) float64 {
+			f := float64(v) / 255
+			if f <= 0.03928 {
+				return f / 12.92
+			}
+			return math.Pow((f+0.055)/1.055, 2.4)
+		}
+		return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b)
+	}
+	l1, l2 := lum(fgHex), lum(bgHex)
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return (l1 + 0.05) / (l2 + 0.05)
+}
+
 // one ▀ glyph: foreground = top source pixel, background = bottom.
 // Terminal cells are ~1:2 (w:h), so sampling cols × rows*2 source pixels
 // yields roughly-square-looking output. Run-length emits color codes

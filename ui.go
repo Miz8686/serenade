@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/png"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,6 +77,7 @@ type model struct {
 	artSec    string
 	artBlock  string
 	artFile   string
+	bgImg     image.Image // blurred+scrimmed variant for background mode
 	kitty     bool
 	kittyID   int
 	appliedAc string
@@ -874,11 +877,112 @@ func (m *model) applyAccent(prim, sec string) {
 // below the block where Phase 3's spectrograph strip will slot in.
 func (m model) artBox() (cols, rows int) {
 	cols = max(10, m.width-m.listOuterWidth()-2)
+	if m.bgMode() {
+		return cols, 0
+	}
 	innerH := max(8, m.height-m.statusH()-2)
 	rows = innerH * 40 / 100
 	rows = min(rows, max(4, innerH-10))
 	rows = max(4, rows)
 	return cols, rows
+}
+
+// bgMode reports whether the blurred-background experiment is active:
+// enabled in config AND art actually present for this track.
+func (m model) bgMode() bool {
+	return m.cfg.Theme.BackgroundArt && m.artImg != nil
+}
+
+// loadBg builds (or loads from disk cache) the blurred+scrimmed
+// background variant for path, from the already-cached pixels.
+func (m *model) loadBg(path string) {
+	m.bgImg = nil
+	key := artKey(path)
+	if key == "" {
+		return
+	}
+	bgPath := filepath.Join(artDir(), key+"-bg.png")
+	if raw, err := os.ReadFile(bgPath); err == nil {
+		if img, _, err := image.Decode(bytes.NewReader(raw)); err == nil {
+			if rgba, ok := img.(*image.RGBA); ok {
+				m.bgImg = rgba
+			} else {
+				m.bgImg = toRGBA(img)
+			}
+			return
+		}
+	}
+	img, _, _, err := cachedArt(path)
+	if err != nil || img == nil {
+		return
+	}
+	blurred := blurCached(toRGBA(img))
+	scr := scrimToward(blurred, themeBase.Bg, 0.35)
+	m.bgImg = scr
+	var buf bytes.Buffer
+	if err := encodePNG(&buf, scr); err == nil {
+		_ = os.MkdirAll(artDir(), 0o755)
+		_ = os.WriteFile(bgPath, buf.Bytes(), 0o644)
+	}
+}
+
+// renderBgText draws the Now Playing text over the blurred art: each
+// cell takes its background from the art, text glyphs draw in the
+// theme text color on top. Bypasses the viewport (no scrolling in
+// background mode — content is short by construction).
+func (m model) renderBgText() string {
+	lines := strings.Split(m.detailText(), "\n")
+	W := m.detail.Width
+	H := m.maxTextH()
+	var fr, fg, fb int
+	fmt.Sscanf(themeBase.Text, "#%02x%02x%02x", &fr, &fg, &fb)
+	sb := m.bgImg.Bounds()
+	var b strings.Builder
+	lastBG := -1
+	for r := 0; r < H; r++ {
+		var runes []rune
+		if r < len(lines) {
+			runes = []rune(stripANSI(lines[r]))
+		}
+		for c := 0; c < W; c++ {
+			sx := sb.Min.X + c*sb.Dx()/max(1, W)
+			sy := sb.Min.Y + r*sb.Dy()/max(1, H)
+			br, bg, bb, _ := m.bgImg.At(sx, sy).RGBA()
+			bgi := int(br>>8)<<16 | int(bg>>8)<<8 | int(bb>>8)
+			if bgi != lastBG {
+				fmt.Fprintf(&b, "\x1b[48;2;%d;%d;%dm", br>>8, bg>>8, bb>>8)
+				lastBG = bgi
+			}
+			if c < len(runes) {
+				fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm%c", fr, fg, fb, runes[c])
+			} else {
+				b.WriteString(" ")
+			}
+		}
+		b.WriteString("\x1b[0m\n")
+		lastBG = -1
+	}
+	return b.String()
+}
+
+// stripANSI removes escape sequences so overlay text measures cleanly.
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // loadArt refreshes cached pixels + accents for path and rebuilds the
@@ -897,7 +1001,13 @@ func (m *model) loadArt(path string) {
 	m.artImg = img
 	m.artPrim, m.artSec = prim, sec
 	m.applyAccent(prim, sec)
-	m.artBlock = m.renderArt()
+	if m.bgMode() {
+		m.loadBg(path)
+		m.artBlock = ""
+	} else {
+		m.bgImg = nil
+		m.artBlock = m.renderArt()
+	}
 }
 
 func (m model) emptyArt() string {
@@ -964,6 +1074,19 @@ func (m model) artPNG() ([]byte, int, int) {
 }
 
 func (m *model) syncDetail() {
+	content := m.detailText()
+	// Fit the viewport to its content so no dead blank gap pools
+	// between the text and the visualizer strip. Scrolling still
+	// works when content exceeds the reservation.
+	lines := strings.Count(content, "\n") + 1
+	m.detail.Height = min(max(3, lines), m.maxTextH())
+	m.detail.SetContent(content)
+}
+
+// detailText builds the Now Playing text block. Shared by the
+// viewport path and the background-art renderer so both show the
+// same content by construction.
+func (m *model) detailText() string {
 	var b strings.Builder
 	if m.beErr != "" && m.status.File == "" {
 		b.WriteString(styleError.Render("backend: "+m.beErr) + "\n")
@@ -991,12 +1114,7 @@ func (m *model) syncDetail() {
 		fmt.Fprintf(&b, "%s\n", stylePlaying.Render("⇄ shuffle on"))
 	}
 	content := b.String()
-	// Fit the viewport to its content so no dead blank gap pools
-	// between the text and the visualizer strip. Scrolling still
-	// works when content exceeds the reservation.
-	lines := strings.Count(content, "\n") + 1
-	m.detail.Height = min(max(3, lines), m.maxTextH())
-	m.detail.SetContent(content)
+	return content
 }
 
 func fmtTime(s int) string {
@@ -1135,9 +1253,21 @@ func (m model) View() string {
 		list = styleBlurBorder.Width(m.listOuterWidth() - 2).Render(list)
 	}
 
-	// Right pane, top to bottom: Now Playing text, visualizer strip,
-	// cover art anchored at the bottom.
-	right := lipgloss.JoinVertical(lipgloss.Left, m.detail.View(), m.renderViz(), m.artBlock)
+	// Right pane, top to bottom: Now Playing text (over blurred art
+	// in background mode, else plain viewport), visualizer strip,
+	// cover art anchored at the bottom (suppressed in background mode).
+	var textPart string
+	parts := []string{}
+	if m.bgMode() {
+		textPart = m.renderBgText()
+	} else {
+		textPart = m.detail.View()
+	}
+	parts = append(parts, textPart, m.renderViz())
+	if !m.bgMode() {
+		parts = append(parts, m.artBlock)
+	}
+	right := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	if m.focus == focusDetail {
 		right = styleFocusedBorder.Width(m.detail.Width).Render(right)
 	} else {

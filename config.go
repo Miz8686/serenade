@@ -15,17 +15,20 @@ import (
 
 // Theme holds semantic color tokens. Empty string = fall back to base.
 type Theme struct {
-	Base    string `toml:"base"`
-	Bg      string `toml:"bg"`
-	Surface string `toml:"surface"`
-	Dim     string `toml:"dim"`
-	Text    string `toml:"text"`
-	Muted   string `toml:"muted"`
-	Accent  string `toml:"accent"`
-	Accent2 string `toml:"accent2"`
-	Success string `toml:"success"`
-	Warn    string `toml:"warn"`
-	Error   string `toml:"error"`
+	Base string `toml:"base"`
+	// background_art swaps the sharp art box for blurred art behind
+	// the Now Playing text. Default off until seen and chosen.
+	BackgroundArt bool   `toml:"background_art"`
+	Bg            string `toml:"bg"`
+	Surface       string `toml:"surface"`
+	Dim           string `toml:"dim"`
+	Text          string `toml:"text"`
+	Muted         string `toml:"muted"`
+	Accent        string `toml:"accent"`
+	Accent2       string `toml:"accent2"`
+	Success       string `toml:"success"`
+	Warn          string `toml:"warn"`
+	Error         string `toml:"error"`
 }
 
 // Keys maps actions to one or more key names as reported by

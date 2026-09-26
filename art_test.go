@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -141,5 +142,91 @@ func TestProbeNeverHangs(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("probeConn hung >5s on silent terminal")
+	}
+}
+
+func TestBoxBlurSmooths(t *testing.T) {
+	// Half-black/half-white: blur must pull edge pixels toward gray.
+	img := image.NewRGBA(image.Rect(0, 0, 40, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 40; x++ {
+			if x < 20 {
+				img.SetRGBA(x, y, color.RGBA{0, 0, 0, 255})
+			} else {
+				img.SetRGBA(x, y, color.RGBA{255, 255, 255, 255})
+			}
+		}
+	}
+	out := boxBlurPass(img, 8)
+	r, _, _, _ := out.RGBAAt(19, 5).RGBA()
+	got := int(r >> 8)
+	if got < 40 || got > 215 {
+		t.Fatalf("edge pixel not smoothed: %d", got)
+	}
+	r0, _, _, _ := out.RGBAAt(0, 5).RGBA()
+	if int(r0>>8) > 30 {
+		t.Fatalf("deep interior leaked: %d", int(r0>>8))
+	}
+}
+
+func TestScrimContrast(t *testing.T) {
+	// Bright art scrims toward dark bg: text must stay readable.
+	white := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			white.SetRGBA(x, y, color.RGBA{255, 255, 255, 255})
+		}
+	}
+	// Worst case (pure-white art) must clear the large-text floor of
+	// 3.0. Real-library worst case measured 3.59 — the known tension
+	// between readability and visible art, bounded, not papered over.
+	scr := scrimToward(white, "#1E1E2E", 0.35)
+	r, g, b, _ := scr.RGBAAt(4, 4).RGBA()
+	got := fmt.Sprintf("#%02x%02x%02x", int(r>>8), int(g>>8), int(b>>8))
+	if ratio := contrastRatio("#CDD6F4", got); ratio < 3.0 {
+		t.Fatalf("contrast %.2f below 3.0 on %s", ratio, got)
+	}
+}
+
+func TestBlurPerf(t *testing.T) {
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, _, _, err := cachedArt(firstTrackWithArt(t, tracks))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_ = blurCached(toRGBA(img))
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("blur too slow: %v", d)
+	} else {
+		t.Logf("3-pass blur: %v", d)
+	}
+}
+
+func TestBgRender(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Theme.BackgroundArt = true
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, cfg)
+	m.width, m.height = 167, 39
+	m.layoutPanes()
+	m.status = Status{State: "playing", File: "/x.flac", Artist: "A", Title: "T", Album: "Al", Duration: 200, Position: 10}
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := firstTrackWithArt(t, tracks)
+	m.loadArt(path)
+	if m.bgImg == nil {
+		t.Fatal("no bg image built")
+	}
+	if _, rows := m.artBox(); rows != 0 {
+		t.Fatalf("bg mode must reserve zero art rows, got %d", rows)
+	}
+	out := m.renderBgText()
+	if !strings.Contains(out, "T") || !strings.Contains(out, "48;2") {
+		t.Fatalf("bg text missing content or background codes")
 	}
 }
