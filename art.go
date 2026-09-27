@@ -31,7 +31,12 @@ import (
 	"golang.org/x/term"
 )
 
-const artCacheMaxW = 300
+const artCacheMaxW = 384
+
+// artCacheVer versions cache filenames: bump on any size/pipeline
+// change so stale files miss and rebuild instead of pinning the old
+// resolution forever. Legacy unversioned files are removed on miss.
+const artCacheVer = "v2"
 
 func artDir() string {
 	home, _ := os.UserHomeDir()
@@ -95,8 +100,8 @@ func cachedArt(path string) (image.Image, string, string, error) {
 		return nil, "", "", fmt.Errorf("stat: %s", path)
 	}
 	dir := artDir()
-	imgPath := filepath.Join(dir, key+".png")
-	accPath := filepath.Join(dir, key+".txt")
+	imgPath := filepath.Join(dir, key+"-"+artCacheVer+".png")
+	accPath := filepath.Join(dir, key+"-"+artCacheVer+".txt")
 	if raw, err := os.ReadFile(imgPath); err == nil {
 		if img, _, err := image.Decode(bytes.NewReader(raw)); err == nil {
 			if acc, err := os.ReadFile(accPath); err == nil {
@@ -133,6 +138,9 @@ func cachedArt(path string) (image.Image, string, string, error) {
 	}
 	_ = os.WriteFile(imgPath, buf.Bytes(), 0o644)
 	_ = os.WriteFile(accPath, []byte(prim+"\n"+sec+"\n"), 0o644)
+	// Reclaim the pre-version files this entry supersedes.
+	_ = os.Remove(filepath.Join(dir, key+".png"))
+	_ = os.Remove(filepath.Join(dir, key+".txt"))
 	return dst, prim, sec, nil
 }
 

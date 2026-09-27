@@ -194,6 +194,25 @@ func (m *model) clampCursor() {
 	}
 }
 
+// followPlaying jumps scroll offset AND cursor to the playing track's
+// row. Fires only on track-start transitions (see statusMsg), never on
+// continuous position polls. Accepted trade-off: takes over the cursor
+// if the user is mid-browsing exactly when a transition fires — ship
+// the simple version first, revisit only if real use shows pain.
+func (m *model) followPlaying(path string) {
+	if path == "" {
+		return
+	}
+	for i, t := range m.view {
+		if t.Path == path {
+			m.cursor = i
+			vis := m.visibleRows()
+			m.offset = min(max(0, len(m.view)-vis), max(0, i-vis/2))
+			return
+		}
+	}
+}
+
 func (m model) playingPath() string { return m.status.File }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -239,6 +258,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = msg.st
 			if m.status.File != m.artFile {
 				m.loadArt(m.status.File)
+			}
+			// Track-start transition (not a position poll): follow the
+			// now-playing row so it's visible and selected. Covers
+			// auto-advance, shuffle jumps and manual plays alike, since
+			// all of them surface here as a file change.
+			if m.status.File != m.prev.File {
+				m.followPlaying(m.status.File)
 			}
 		}
 		m.syncDetail()
@@ -891,15 +917,13 @@ func (m model) renderViz() string {
 		if m.vizErr != "" {
 			return styleError.Render("visualizer: "+m.vizErr) + "\n" + strings.Repeat("\n", vizHeight-1)
 		}
-		// Resting baseline, not missing: flat zero-height bars in the
-		// live accent color across every column.
+		// Resting baseline, compact single line (not a 4-row block):
+		// flat zero-height bars in the live accent color. Reads as
+		// "resting," and hands its rows to the art box above.
 		a, _ := m.vizAccent()
 		var cr, cg, cb int
 		fmt.Sscanf(a, "#%02x%02x%02x", &cr, &cg, &cb)
 		var sb strings.Builder
-		for r := 0; r < vizHeight-1; r++ {
-			sb.WriteString("\n")
-		}
 		fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm", cr, cg, cb)
 		for i := 0; i < bars; i++ {
 			sb.WriteString("─ ")
@@ -944,12 +968,21 @@ func (m *model) layoutPanes() {
 	m.syncDetail()
 }
 
+// vizReserve is the strip's row cost for layout: a single resting
+// line when idle, the full vizHeight when active or erroring.
+func (m model) vizReserve() int {
+	if !m.vizActive && m.vizErr == "" {
+		return 1
+	}
+	return vizHeight
+}
+
 // maxTextH is the tallest the Now Playing viewport may grow: whatever
-// remains after the fixed art and visualizer reservations.
+// remains after the art and visualizer reservations.
 func (m model) maxTextH() int {
 	rightInnerH := max(8, m.height-m.statusH()-2)
 	_, artRows := m.artBox()
-	return max(3, rightInnerH-artRows-vizHeight)
+	return max(3, rightInnerH-artRows-m.vizReserve())
 }
 
 // applyAccent pushes a per-track accent into selection, progress and
@@ -985,16 +1018,18 @@ func (m *model) applyAccent(prim, sec string) {
 	)
 }
 
-// artBox returns the art render box: full inner width, ~40% of the
-// right-pane inner height. Text keeps the rest, with vertical room
-// below the block where Phase 3's spectrograph strip will slot in.
+// artBox returns the art render box: full inner width, ~50% of the
+// right-pane inner height. Reclaimed dead space (text tightening +
+// compact idle viz, one row instead of four) went here: a bigger
+// render target is what fixes the stair-stepping on diagonals, which
+// is a resolution ceiling, not a renderer technique problem.
 func (m model) artBox() (cols, rows int) {
 	cols = max(10, m.width-m.listOuterWidth()-2)
 	if m.bgMode() {
 		return cols, 0
 	}
 	innerH := max(8, m.height-m.statusH()-2)
-	rows = innerH * 40 / 100
+	rows = innerH * 50 / 100
 	rows = min(rows, max(4, innerH-10))
 	rows = max(4, rows)
 	return cols, rows
@@ -1014,7 +1049,7 @@ func (m *model) loadBg(path string) {
 	if key == "" {
 		return
 	}
-	bgPath := filepath.Join(artDir(), key+"-bg.png")
+	bgPath := filepath.Join(artDir(), key+"-"+artCacheVer+"-bg.png")
 	if raw, err := os.ReadFile(bgPath); err == nil {
 		if img, _, err := image.Decode(bytes.NewReader(raw)); err == nil {
 			if rgba, ok := img.(*image.RGBA); ok {
@@ -1036,6 +1071,7 @@ func (m *model) loadBg(path string) {
 	if err := encodePNG(&buf, scr); err == nil {
 		_ = os.MkdirAll(artDir(), 0o755)
 		_ = os.WriteFile(bgPath, buf.Bytes(), 0o644)
+		_ = os.Remove(filepath.Join(artDir(), key+"-bg.png"))
 	}
 }
 
@@ -1189,9 +1225,15 @@ func (m model) artPNG() ([]byte, int, int) {
 func (m *model) syncDetail() {
 	content := m.detailText()
 	// Fit the viewport to its content so no dead blank gap pools
-	// between the text and the visualizer strip. Scrolling still
-	// works when content exceeds the reservation.
-	lines := strings.Count(content, "\n") + 1
+	// between the text and the visualizer strip. Every content line
+	// ends with newline, so count exact lines without a +1 (a +1 here
+	// leaked one blank row per render — measured in a live frame).
+	// Scrolling still works when content exceeds the reservation.
+	trimmed := strings.TrimRight(content, "\n")
+	lines := 1
+	if trimmed != "" {
+		lines = strings.Count(trimmed, "\n") + 1
+	}
 	m.detail.Height = min(max(3, lines), m.maxTextH())
 	m.detail.SetContent(content)
 }
@@ -1208,17 +1250,17 @@ func (m *model) detailText() string {
 		b.WriteString(styleMuted.Render("nothing playing") + "\n")
 		b.WriteString(styleMuted.Render("Enter on a track to play") + "\n")
 	} else {
-		b.WriteString(styleTitle.Render("Now Playing") + "\n\n")
+		b.WriteString(styleTitle.Render("Now Playing") + "\n")
 		artist := m.status.Artist
 		if artist == "" {
 			artist = "—"
 		}
 		fmt.Fprintf(&b, "%s\n", styleSelected.Render(" "+artist+" "))
-		fmt.Fprintf(&b, "\n%s\n", m.status.Title)
+		fmt.Fprintf(&b, "%s\n", m.status.Title)
 		if m.status.Album != "" {
 			fmt.Fprintf(&b, "%s\n", styleMuted.Render(m.status.Album))
 		}
-		fmt.Fprintf(&b, "\n%s\n", styleMuted.Render(m.status.File))
+		fmt.Fprintf(&b, "%s\n", styleMuted.Render(m.status.File))
 	}
 	if len(m.queue) > 0 {
 		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
