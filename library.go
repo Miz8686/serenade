@@ -19,6 +19,7 @@ type Track struct {
 	Title  string
 	Album  string
 	TrackN int
+	Lyrics string // embedded USLT/SYLT text, "" when untagged
 }
 
 func (t Track) label() string {
@@ -65,6 +66,7 @@ func readTrack(path string) Track {
 		t.Artist = m.AlbumArtist()
 	}
 	t.Album = m.Album()
+	t.Lyrics = m.Lyrics()
 	if n, _ := m.Track(); n > 0 {
 		t.TrackN = n
 	}

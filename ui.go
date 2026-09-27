@@ -108,6 +108,13 @@ type model struct {
 	bgGridH int
 	// bass is the smoothed low-band level driving the frame pulse.
 	bass float64
+	// Lyrics state for the under-art panel. Lines resolve per
+	// track (embedded → cache → one async fetch); the render
+	// fills exactly the leftover rows, never a reserved block.
+	lyrFile    string
+	lyrLines   []lyricLine
+	lyrSynced  bool
+	lyrPending string
 	// Phase-3 visualizer state.
 	tap       *vizTap
 	levels    []float64
@@ -380,12 +387,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// all of them surface here as a file change.
 			if m.status.File != m.prev.File {
 				m.followPlaying(m.status.File)
+				var cmds []tea.Cmd
 				if cmd := m.startReveal(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				if cmd := m.loadLyrics(m.status.File); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				if len(cmds) > 0 {
 					m.syncDetail()
 					if m.focused {
-						return m, tea.Batch(pollBackend(m.be), m.syncViz(), cmd)
+						return m, tea.Batch(append([]tea.Cmd{pollBackend(m.be), m.syncViz()}, cmds...)...)
 					}
-					return m, cmd
+					return m, tea.Batch(cmds...)
 				}
 			}
 		}
@@ -410,6 +424,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case flashMsg:
 		m.flash = ""
+		return m, nil
+
+	case lyricMsg:
+		if m.lyrPending == msg.file {
+			m.lyrPending = ""
+		}
+		if msg.file != m.lyrFile {
+			return m, nil // stale: track moved on
+		}
+		if msg.err != nil {
+			return m, nil // tombstoned: stay quiet
+		}
+		if l := parseLRC(msg.synced); len(l) > 0 {
+			m.lyrLines, m.lyrSynced = l, true
+		} else {
+			m.lyrLines = plainLines(msg.plain)
+		}
 		return m, nil
 
 	case revealTickMsg:
@@ -2002,6 +2033,19 @@ func (m model) View() string {
 	parts = append(parts, textPart, m.renderViz())
 	if !m.bgMode() {
 		parts = append(parts, m.artBlock)
+		// Lyrics take exactly the leftover rows under the panel:
+		// viewport height + strip + art are all fixed, so this
+		// fills dead space without moving anything else.
+		vizRows := vizHeight
+		if !m.vizActive && m.vizErr == "" {
+			vizRows = 1
+		}
+		_, artRows := m.artBox()
+		if left := topH - m.detail.Height - vizRows - artRows; left >= 2 {
+			if lyr := m.renderLyrics(left); lyr != "" {
+				parts = append(parts, lyr)
+			}
+		}
 	}
 	rightCol := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	// Pad the short column so the divider runs the full top height.
@@ -2036,6 +2080,91 @@ func (m model) View() string {
 		content = m.paintFullBleed(content)
 	}
 	return m.frameStyle().Width(contentW).Render(content)
+}
+
+// loadLyrics resolves display lines for file: embedded tags,
+// then disk cache, then one async fetch. Returns non-nil only for
+// the fetch; everything else resolves inline.
+func (m *model) loadLyrics(file string) tea.Cmd {
+	m.lyrFile = file
+	m.lyrLines = nil
+	m.lyrSynced = false
+	if file == "" {
+		return nil
+	}
+	artist, title, album := "", baseName(file), ""
+	for i := range m.tracks {
+		if m.tracks[i].Path == file {
+			artist, title, album = m.tracks[i].Artist, m.tracks[i].Title, m.tracks[i].Album
+			if m.tracks[i].Lyrics != "" {
+				if l := parseLRC(m.tracks[i].Lyrics); len(l) > 0 {
+					m.lyrLines, m.lyrSynced = l, true
+				} else {
+					m.lyrLines = plainLines(m.tracks[i].Lyrics)
+				}
+				return nil
+			}
+			break
+		}
+	}
+	dur := m.status.Duration
+	if c, ok := lyricLoad(artist, title, album); ok {
+		if !c.Found {
+			return nil // tombstone: stay quiet
+		}
+		if l := parseLRC(c.Synced); len(l) > 0 {
+			m.lyrLines, m.lyrSynced = l, true
+		} else {
+			m.lyrLines = plainLines(c.Plain)
+		}
+		return nil
+	}
+	if m.lyrPending == file {
+		return nil
+	}
+	m.lyrPending = file
+	return fetchLyricsCmd(file, artist, title, album, dur)
+}
+
+// renderLyrics fills exactly height leftover rows under the art
+// panel: synced lines auto-follow position (current line accented),
+// plain lines window by progress fraction. Empty states stay quiet.
+func (m model) renderLyrics(height int) string {
+	if height < 2 || m.lyrFile == "" {
+		return ""
+	}
+	w := m.rightPaneW()
+	if len(m.lyrLines) == 0 {
+		if m.lyrPending == m.lyrFile {
+			return ""
+		}
+		var b strings.Builder
+		b.WriteString(styleMuted.Render("(no lyrics found)") + "\n")
+		for i := 1; i < height; i++ {
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+	pos := float64(m.status.Position)
+	frac := 0.0
+	if m.status.Duration > 0 {
+		frac = pos / float64(m.status.Duration)
+	}
+	from, to := lyricWindow(m.lyrLines, m.lyrSynced, pos, frac, height)
+	cur := -1
+	if m.lyrSynced {
+		cur = currentLyric(m.lyrLines, pos)
+	}
+	var b strings.Builder
+	for i := from; i < to; i++ {
+		line := runewidth.Truncate(m.lyrLines[i].text, w, "\u2026")
+		if m.lyrSynced && i == cur {
+			b.WriteString(stylePlaying.Render(line) + "\n")
+		} else {
+			b.WriteString(styleMuted.Render(line) + "\n")
+		}
+	}
+	return b.String()
 }
 
 // frameStyle builds the outer edge per render: solid instrument

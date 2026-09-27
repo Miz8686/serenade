@@ -17,6 +17,7 @@ One self-contained binary, no daemons, no shell-script glue.
   tapping the PipeWire monitor via `pw-cat` — no cava needed
 - **Bar**: gradient progress, MPRIS exposed by cmus itself (Waybar-ready)
 - **Extras**: fuzzy search, in-memory queue, `?` help overlay,
+  synced/plain lyrics under the art (embedded tags, lrclib cache),
   `~/.config/serenade/config.toml` for theme + keybinds
 
 ## Requirements
