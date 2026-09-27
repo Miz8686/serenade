@@ -434,14 +434,25 @@ func TestListWindowGrouping(t *testing.T) {
 	if got := m.screenSpan(0, 2); got != len(lines) {
 		t.Fatalf("screenSpan(0,2)=%d != window len %d", got, len(lines))
 	}
+	// Artist-less runs get no heading: titles carry their own context.
+	m.view = append([]Track{{Path: "/x", Title: "No Artist - Track"}}, m.view...)
+	m.cursor, m.offset = 0, 0
+	lines = m.listWindow()
+	if lines[0].kind != llTrack {
+		t.Fatalf("artist-less lead must render bare, got kind=%d", lines[0].kind)
+	}
+	if got := m.screenSpan(0, 3); got != len(lines) {
+		t.Fatalf("screenSpan(0,3)=%d != window len %d", got, len(lines))
+	}
 	// Heading clicks are ignored; track clicks resolve view indexes.
 	um, _ := m.handleMouse(tea.MouseMsg{X: 5, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if um.(model).cursor != 0 {
 		t.Fatalf("heading click moved cursor")
 	}
-	um, _ = m.handleMouse(tea.MouseMsg{X: 5, Y: 7, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	if um.(model).cursor != 2 {
-		t.Fatalf("post-gap click: cursor=%d want 2", um.(model).cursor)
+	// window: Tx(0) G(1) H(2) Ta1(3) Ta2(4) G(5) H(6) Tb1(7) -> Y=9
+	um, _ = m.handleMouse(tea.MouseMsg{X: 5, Y: 9, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um.(model).cursor != 3 {
+		t.Fatalf("post-gap click: cursor=%d want 3", um.(model).cursor)
 	}
 }
 

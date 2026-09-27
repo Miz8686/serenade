@@ -61,4 +61,17 @@ func TestShots(t *testing.T) {
 
 	f := shotModel(t, "/home/miz/Sparsha FLACS/03 - Chirag Khadka - Samadhi.flac", 0)
 	os.WriteFile("/tmp/shot_fallback.txt", []byte(f.View()), 0o644)
+
+	// reveal sequence through the real tick machine
+	r := shotModel(t, "/home/miz/Phone-backup/davinci-20260925/4a/FLAC/Linkin Park - Papercut.flac", 0)
+	r.reveal = revealFrames
+	r.artBlock = r.renderArtMasked(0)
+	saves := map[int]string{1: "/tmp/shot_reveal1.txt", 3: "/tmp/shot_reveal2.txt", 6: "/tmp/shot_reveal3.txt", 10: "/tmp/shot_reveal4.txt"}
+	for i := 1; i <= revealFrames; i++ {
+		um, _ := r.Update(revealTickMsg{})
+		r = um.(model)
+		if fn, ok := saves[i]; ok {
+			os.WriteFile(fn, []byte(r.View()), 0o644)
+		}
+	}
 }

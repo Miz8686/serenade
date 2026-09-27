@@ -232,12 +232,17 @@ func (m model) screenSpan(a, b int) int {
 	n, prevA, first := 0, "", true
 	for i := a; i <= b && i < len(m.view); i++ {
 		ak := artistKey(m.view[i].Artist)
-		if first || ak != prevA {
+		// The artist-less run gets no heading: its titles already
+		// carry "Artist - Title" from the filename fallback.
+		if m.view[i].Artist != "" && (first || ak != prevA) {
 			if !first {
 				n++
 			}
 			n++
 			prevA, first = ak, false
+		} else if first {
+			first = false
+			prevA = ak
 		}
 		n++
 	}
@@ -260,7 +265,7 @@ func (m model) listWindow() []listLine {
 	prevA, first := "", true
 	for i := m.offset; i < len(m.view) && len(lines) < vis; i++ {
 		ak := artistKey(m.view[i].Artist)
-		if first || ak != prevA {
+		if m.view[i].Artist != "" && (first || ak != prevA) {
 			need := 2 // heading + its first track
 			if !first {
 				need = 3 // gap + heading + track
@@ -273,6 +278,8 @@ func (m model) listWindow() []listLine {
 			}
 			lines = append(lines, listLine{llArtist, i})
 			prevA, first = ak, false
+		} else if first {
+			first, prevA = false, ak
 		}
 		if len(lines)+1 > vis {
 			break
@@ -1720,11 +1727,7 @@ func (m model) View() string {
 		case llGap:
 			rows = append(rows, "")
 		case llArtist:
-			a := m.view[ln.idx].Artist
-			if a == "" {
-				a = "—"
-			}
-			rows = append(rows, styleArtist.Render(strings.ToUpper(a)))
+			rows = append(rows, styleArtist.Render(strings.ToUpper(m.view[ln.idx].Artist)))
 		default:
 			i := ln.idx
 			t := m.view[i]
