@@ -62,6 +62,8 @@ type model struct {
 	viewHL    [][]int  // per-row matched char indexes (fuzzy highlight)
 	searching bool
 	showHelp  bool // ? overlay, generated from cfg.keySets()
+	showQueue bool // queue overlay: view/reorder/remove the live queue
+	qCursor   int  // selection within the queue overlay
 	shuf      shuffleState
 	searchBox textinput.Model
 	focus     focusPane
@@ -391,6 +393,32 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// Queue overlay is modal like help: quit still quits, esc/A
+	// closes, navigation + reorder + remove act on the live queue
+	// pickNext() drains, everything else is swallowed.
+	if m.showQueue {
+		if is("quit", k) {
+			m.be.stop()
+			return m, tea.Quit
+		}
+		switch {
+		case k == "esc" || is("queueview", k):
+			m.showQueue = false
+		case is("up", k):
+			m.qCursor--
+			m.clampQCursor()
+		case is("down", k):
+			m.qCursor++
+			m.clampQCursor()
+		case k == "K":
+			m.queue, m.qCursor = queueMove(m.queue, m.qCursor, -1)
+		case k == "J":
+			m.queue, m.qCursor = queueMove(m.queue, m.qCursor, +1)
+		case k == "d":
+			m.queue, m.qCursor = queueRemove(m.queue, m.qCursor)
+		}
+		return m, nil
+	}
 	// Search mode captures everything except Enter (play+exit) and
 	// Esc (exit, restore full list). Playback keys stay silent here
 	// so typing a space doesn't toggle pause mid-query.
@@ -471,6 +499,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case is("help", k):
 			m.showHelp = true
 			return m, nil
+		case is("queueview", k):
+			m.showQueue = true
+			m.qCursor = 0
+			m.clampQCursor()
+			return m, nil
 		}
 		var cmd tea.Cmd
 		m.detail, cmd = m.detail.Update(msg)
@@ -483,6 +516,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case is("help", k):
 		m.showHelp = true
+		return m, nil
+	case is("queueview", k):
+		m.showQueue = true
+		m.qCursor = 0
+		m.clampQCursor()
 		return m, nil
 	case is("up", k):
 		m.cursor--
@@ -731,6 +769,37 @@ func (m *model) toggleShuffle() {
 			m.beErr = err.Error()
 		}
 	}
+}
+
+// queueMove swaps item i with its neighbor in dir (-1 up, +1 down);
+// the cursor follows the moved item. Boundary moves are no-ops.
+// In-place on the live queue slice pickNext() drains — no copy, no
+// parallel representation.
+func queueMove(q []string, i, dir int) ([]string, int) {
+	j := i + dir
+	if i < 0 || i >= len(q) || j < 0 || j >= len(q) {
+		return q, min(max(i, 0), max(0, len(q)-1))
+	}
+	q[i], q[j] = q[j], q[i]
+	return q, j
+}
+
+// queueRemove drops item i, clamping the cursor into range.
+func queueRemove(q []string, i int) ([]string, int) {
+	if len(q) == 0 {
+		return q, 0
+	}
+	i = min(max(i, 0), len(q)-1)
+	q = append(q[:i], q[i+1:]...)
+	return q, min(i, max(0, len(q)-1))
+}
+
+func (m *model) clampQCursor() {
+	if len(m.queue) == 0 {
+		m.qCursor = 0
+		return
+	}
+	m.qCursor = min(max(m.qCursor, 0), len(m.queue)-1)
 }
 
 func (m *model) enqueueCursor() {
@@ -1302,6 +1371,39 @@ func (m model) helpView() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// queueView renders the live play queue as a centered modal (same
+// mechanism as the help overlay). Reads m.queue directly — the slice
+// pickNext() drains — so reorder/remove apply to real playback, and a
+// track finishing mid-browse simply shifts the list under the cursor
+// (clamped on every navigation key).
+func (m model) queueView() string {
+	var b strings.Builder
+	b.WriteString(styleTitle.Render(fmt.Sprintf("queue (%d)", len(m.queue))) + "\n\n")
+	if len(m.queue) == 0 {
+		b.WriteString(styleMuted.Render("empty — a adds the cursor track") + "\n")
+	}
+	labels := make(map[string]string, len(m.tracks))
+	for _, t := range m.tracks {
+		labels[t.Path] = t.label()
+	}
+	qi := min(max(m.qCursor, 0), max(0, len(m.queue)-1))
+	for i, qp := range m.queue {
+		lab := labels[qp]
+		if lab == "" {
+			lab = baseName(qp)
+		}
+		line := fmt.Sprintf("%2d  %s", i+1, lab)
+		if i == qi && len(m.queue) > 0 {
+			b.WriteString(styleSelected.Render(line) + "\n")
+		} else {
+			b.WriteString(line + "\n")
+		}
+	}
+	b.WriteString("\n" + styleMuted.Render("j/k select · J/K move · d remove · esc closes"))
+	box := styleFocusedBorder.Padding(1, 3).Render(strings.TrimRight(b.String(), "\n"))
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 // btnZone is a clickable status-bar region: rune-width offsets within
 // the status content line (border adds +1 to X at hit-test time).
 type btnZone struct {
@@ -1369,6 +1471,9 @@ func (m model) statusLine() (string, []btnZone) {
 func (m model) View() string {
 	if m.showHelp {
 		return m.helpView()
+	}
+	if m.showQueue {
+		return m.queueView()
 	}
 	if m.width <= 0 {
 		return "loading…"

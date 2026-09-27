@@ -34,26 +34,27 @@ type Theme struct {
 // Keys maps actions to one or more key names as reported by
 // tea.KeyMsg.String() (e.g. "enter", " ", "ctrl+c", "pgup").
 type Keys struct {
-	Up       []string `toml:"up"`
-	Down     []string `toml:"down"`
-	PageUp   []string `toml:"page_up"`
-	PageDown []string `toml:"page_down"`
-	Home     []string `toml:"home"`
-	End      []string `toml:"end"`
-	Tab      []string `toml:"tab"`
-	Quit     []string `toml:"quit"`
-	Play     []string `toml:"play"`
-	Toggle   []string `toml:"toggle"`
-	Next     []string `toml:"next"`
-	Prev     []string `toml:"prev"`
-	SeekBack []string `toml:"seek_back"`
-	SeekFwd  []string `toml:"seek_fwd"`
-	VolUp    []string `toml:"vol_up"`
-	VolDown  []string `toml:"vol_down"`
-	Search   []string `toml:"search"`
-	Shuffle  []string `toml:"shuffle"`
-	Queue    []string `toml:"queue"`
-	Help     []string `toml:"help"`
+	Up        []string `toml:"up"`
+	Down      []string `toml:"down"`
+	PageUp    []string `toml:"page_up"`
+	PageDown  []string `toml:"page_down"`
+	Home      []string `toml:"home"`
+	End       []string `toml:"end"`
+	Tab       []string `toml:"tab"`
+	Quit      []string `toml:"quit"`
+	Play      []string `toml:"play"`
+	Toggle    []string `toml:"toggle"`
+	Next      []string `toml:"next"`
+	Prev      []string `toml:"prev"`
+	SeekBack  []string `toml:"seek_back"`
+	SeekFwd   []string `toml:"seek_fwd"`
+	VolUp     []string `toml:"vol_up"`
+	VolDown   []string `toml:"vol_down"`
+	Search    []string `toml:"search"`
+	Shuffle   []string `toml:"shuffle"`
+	Queue     []string `toml:"queue"`
+	QueueView []string `toml:"queue_view"`
+	Help      []string `toml:"help"`
 }
 
 // Config is the effective (base palette + overrides, default keys +
@@ -86,7 +87,8 @@ func defaultKeys() Keys {
 		SeekBack: []string{"left", "h"}, SeekFwd: []string{"right", "l"},
 		VolUp: []string{"+", "="}, VolDown: []string{"-", "_"},
 		Search: []string{"/"}, Shuffle: []string{"s"}, Queue: []string{"a"},
-		Help: []string{"?"},
+		QueueView: []string{"A"},
+		Help:      []string{"?"},
 	}
 }
 
@@ -110,6 +112,7 @@ func (c Config) keySets() []keySet {
 		{"Fuzzy search", k.Search},
 		{"Shuffle", k.Shuffle},
 		{"Queue add", k.Queue},
+		{"Queue view", k.QueueView},
 		{"Focus pane", k.Tab},
 		{"Help", k.Help},
 		{"Quit", k.Quit},
@@ -162,6 +165,8 @@ func (c Config) keyIs(action, key string) bool {
 		set = c.Keys.Shuffle
 	case "queue":
 		set = c.Keys.Queue
+	case "queueview":
+		set = c.Keys.QueueView
 	case "help":
 		set = c.Keys.Help
 	}

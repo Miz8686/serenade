@@ -343,3 +343,68 @@ func TestNaturalEndAdvances(t *testing.T) {
 		t.Fatalf("natural end did not attempt the next track (no playFile call)")
 	}
 }
+
+func TestQueueMove(t *testing.T) {
+	q := []string{"a", "b", "c"}
+	q, c := queueMove(q, 1, -1)
+	if c != 0 || q[0] != "b" || q[1] != "a" || q[2] != "c" {
+		t.Fatalf("move up: %v cursor %d", q, c)
+	}
+	q, c = queueMove(q, 0, -1) // boundary: no-op
+	if c != 0 || q[0] != "b" {
+		t.Fatalf("top boundary must hold: %v cursor %d", q, c)
+	}
+	q, c = queueMove(q, 2, +1) // boundary: no-op
+	if c != 2 || q[2] != "c" {
+		t.Fatalf("bottom boundary must hold: %v cursor %d", q, c)
+	}
+	q, c = queueMove(q, 0, +1)
+	if c != 1 || q[0] != "a" || q[1] != "b" {
+		t.Fatalf("move down: %v cursor %d", q, c)
+	}
+	if _, c := queueMove(nil, 0, -1); c != 0 {
+		t.Fatalf("empty move cursor %d", c)
+	}
+}
+
+func TestQueueRemove(t *testing.T) {
+	q, c := queueRemove([]string{"a", "b", "c"}, 1)
+	if len(q) != 2 || q[0] != "a" || q[1] != "c" || c != 1 {
+		t.Fatalf("remove middle: %v cursor %d", q, c)
+	}
+	q, c = queueRemove(q, 1) // remove last: cursor steps back
+	if len(q) != 1 || q[0] != "a" || c != 0 {
+		t.Fatalf("remove last: %v cursor %d", q, c)
+	}
+	q, c = queueRemove(q, 0)
+	if len(q) != 0 || c != 0 {
+		t.Fatalf("remove only: %v cursor %d", q, c)
+	}
+	if _, c := queueRemove(nil, 0); c != 0 {
+		t.Fatalf("empty remove cursor %d", c)
+	}
+}
+
+func TestQueueViewRenders(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{
+		{Path: "/a", Artist: "Art", Title: "One"},
+		{Path: "/b", Artist: "Art", Title: "Two"},
+	}
+	m.queue = []string{"/b", "/a"}
+	m.showQueue = true
+	out := m.queueView()
+	for _, want := range []string{"queue (2)", "Art – Two", "Art – One", "d remove"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("queue view missing %q", want)
+		}
+	}
+	if strings.Index(out, "Art – Two") > strings.Index(out, "Art – One") {
+		t.Fatalf("queue view must list in play order")
+	}
+	m.queue = nil
+	if out := m.queueView(); !strings.Contains(out, "empty") {
+		t.Fatalf("empty queue needs an empty state, got %q", out[:min(80, len(out))])
+	}
+}

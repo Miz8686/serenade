@@ -51,6 +51,7 @@ serenade --selftest # backend, index, status, render, mouse checks
 | `+` / `-` | volume |
 | `/` | fuzzy search (Enter plays, Esc clears) |
 | `a` | add to queue (auto-advance drains it first) |
+| `A` | queue overlay: view, reorder (J/K), remove (d) |
 | `Tab` | focus library / detail |
 | `?` | keybind help overlay |
 | `q` | quit (stops playback) |
