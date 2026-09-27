@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -440,5 +441,41 @@ func TestListWindowGrouping(t *testing.T) {
 	um, _ = m.handleMouse(tea.MouseMsg{X: 5, Y: 7, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	if um.(model).cursor != 2 {
 		t.Fatalf("post-gap click: cursor=%d want 2", um.(model).cursor)
+	}
+}
+
+func TestMeterBar(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39 // bar width = 137
+	m.artPrim, m.artSec = "#D9A44C", "#6FA598"
+	out := m.renderBar(0.5)
+	// strip escapes, count cells
+	cells := 0
+	filled := 0
+	for _, r := range out {
+		if r == '█' {
+			cells++
+			filled++
+		} else if r == '─' {
+			cells++
+		}
+	}
+	if cells != 137 {
+		t.Fatalf("bar renders %d cells, zone assumes 137", cells)
+	}
+	if filled != 68 { // int(0.5*137)
+		t.Fatalf("filled=%d want 68", filled)
+	}
+	// gradient endpoints: first cell sits at the prim end of the ramp
+	cr, cg, cb := hexLerp("#D9A44C", "#6FA598", 0.5/137)
+	head := fmt.Sprintf("\x1b[38;2;%d;%d;%dm\u2588", cr, cg, cb)
+	if !strings.Contains(out, head) {
+		t.Fatalf("bar head missing gradient start %q", head)
+	}
+	if strings.Contains(out, "\x1b[38;2;217;164;76m─") {
+		t.Fatalf("empty cells must not use the gradient")
+	}
+	if got := m.renderBar(0); strings.Contains(got, "█") {
+		t.Fatalf("zero progress must render no filled cells")
 	}
 }

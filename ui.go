@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -99,7 +98,6 @@ type model struct {
 	vizErr    string
 	focused   bool // terminal focus; false pauses background polling
 	detail    viewport.Model
-	bar       progress.Model
 	lastClick time.Time
 	lastRow   int
 }
@@ -142,10 +140,6 @@ func buildBaseStyles() {
 
 func newModel(be *backend, kitty bool, cfg Config) model {
 	vp := viewport.New(0, 0)
-	bar := progress.New(
-		progress.WithGradient(string(colAccent), string(colAccent2)),
-		progress.WithoutPercentage(),
-	)
 	themeBase = cfg.Theme
 	buildBaseStyles()
 	ti := textinput.New()
@@ -160,7 +154,6 @@ func newModel(be *backend, kitty bool, cfg Config) model {
 		indexing:  true,
 		focused:   true,
 		detail:    vp,
-		bar:       bar,
 		width:     80,
 		height:    24,
 	}
@@ -1080,6 +1073,48 @@ func hexLerp(a, b string, t float64) (int, int, int) {
 		int(float64(ab) + float64(bb-ab)*t)
 }
 
+// meterColor maps position t in [0,1] along the shared prim→sec
+// ramp. Progress bar (horizontal axis) and visualizer (vertical axis)
+// draw through this one function with the same █/─ glyphs: scrubbing
+// and watching read as one instrument on one signal.
+func meterColor(a, b string, t float64) (int, int, int) {
+	return hexLerp(a, b, t)
+}
+
+// renderBar draws the progress meter: filled cells in the shared
+// gradient, empty cells as quiet ─ rests. Width matches barZone
+// exactly so clicks land where the cells render.
+func (m model) renderBar(pct float64) string {
+	w := max(10, m.width-30)
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 1 {
+		pct = 1
+	}
+	a, b := m.vizAccent()
+	filled := int(pct * float64(w))
+	var sb strings.Builder
+	for i := 0; i < w; i++ {
+		if i < filled {
+			cr, cg, cb := meterColor(a, b, (float64(i)+0.5)/float64(w))
+			fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm\u2588", cr, cg, cb)
+		} else {
+			cr, cg, cb := surfaceRGB()
+			fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm\u2500", cr, cg, cb)
+		}
+	}
+	sb.WriteString("\x1b[0m")
+	return sb.String()
+}
+
+// surfaceRGB parses the surface token for quiet meter cells.
+func surfaceRGB() (int, int, int) {
+	var r, g, b int
+	fmt.Sscanf(string(colSurface), "#%02x%02x%02x", &r, &g, &b)
+	return r, g, b
+}
+
 // vizAccent returns the live bar colors: current track accent pair,
 // falling back to theme tokens.
 func (m model) vizAccent() (string, string) {
@@ -1199,10 +1234,6 @@ func (m *model) applyAccent(prim, sec string) {
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
-	m.bar = progress.New(
-		progress.WithGradient(prim, sec),
-		progress.WithoutPercentage(),
-	)
 }
 
 // artBox returns the art render box: full inner width, ~50% of the
@@ -1700,8 +1731,7 @@ func (m model) View() string {
 			pct = 1
 		}
 	}
-	m.bar.Width = max(10, m.width-30)
-	barLine := lipgloss.NewStyle().Width(contentW).Render(m.bar.ViewAs(pct))
+	barLine := lipgloss.NewStyle().Width(contentW).Render(m.renderBar(pct))
 	statusText, _ := m.statusLine()
 	statusText = lipgloss.NewStyle().Width(contentW).Render(statusText)
 	hrule := styleDivider.Render(strings.Repeat("\u2500", contentW))
