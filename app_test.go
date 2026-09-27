@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -553,5 +554,73 @@ func TestRevealStartsOnTransition(t *testing.T) {
 	}
 	if strings.Contains(mm.artBlock, "▀") {
 		t.Fatalf("wipe frame zero must start blank")
+	}
+}
+
+// firstRGB parses the first 38;2 or 48;2 triple out of rendered
+// output. Channels compare with tolerance 1: lipgloss rounds through
+// its own pipeline (brass renders 217;163;76, not 217;164;76).
+func firstRGB(out, kind string) (int, int, int, bool) {
+	re := regexp.MustCompile(regexp.QuoteMeta(kind) + `(\d+);(\d+);(\d+)`)
+	m := re.FindStringSubmatch(out)
+	if m == nil {
+		return 0, 0, 0, false
+	}
+	var v [3]int
+	for i := 0; i < 3; i++ {
+		fmt.Sscanf(m[i+1], "%d", &v[i])
+	}
+	return v[0], v[1], v[2], true
+}
+
+func closeRGB(r, g, b, wr, wg, wb int) bool {
+	abs := func(x int) int {
+		if x < 0 {
+			return -x
+		}
+		return x
+	}
+	return abs(r-wr) <= 1 && abs(g-wg) <= 1 && abs(b-wb) <= 1
+}
+
+func TestBrandCeiling(t *testing.T) {
+	// Stress: fully saturated red art must own ONLY the
+	// playing-row/selection surface. Titles, headings, focus,
+	// overlay borders and the progress bar stay house brand.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.applyAccent("#fd002a", "#8c7a86")
+	probes := map[string]struct {
+		out        string
+		kind       string
+		wr, wg, wb int
+	}{
+		"title":    {styleTitle.Render("t"), "38;2;", 217, 164, 76},
+		"artist":   {styleArtist.Render("a"), "38;2;", 67, 179, 174},
+		"hl":       {styleHL.Render("h"), "38;2;", 217, 164, 76},
+		"selected": {styleSelected.Render("s"), "48;2;", 253, 0, 42},
+		"playing":  {stylePlaying.Render("p"), "38;2;", 253, 0, 42},
+	}
+	for name, pr := range probes {
+		r, g, b, ok := firstRGB(pr.out, pr.kind)
+		if !ok || !closeRGB(r, g, b, pr.wr, pr.wg, pr.wb) {
+			t.Fatalf("%s lost its color: %q", name, pr.out[:min(60, len(pr.out))])
+		}
+	}
+	if got := styleFocusedBorder.Render("x"); func() bool {
+		r, g, b, ok := firstRGB(got, "38;2;")
+		return !ok || !closeRGB(r, g, b, 217, 164, 76)
+	}() {
+		t.Fatalf("overlay border must stay brand, got %q", got[:min(60, len(got))])
+	}
+	bar := m.renderBar(0.5)
+	r, g, b, ok := firstRGB(bar, "38;2;")
+	if !ok || !closeRGB(r, g, b, 217, 164, 76) {
+		t.Fatalf("progress bar must ride the brand ramp, got %d;%d;%d", r, g, b)
+	}
+	if strings.Contains(bar, "253;0;42") {
+		t.Fatalf("track red leaked into the progress bar")
 	}
 }

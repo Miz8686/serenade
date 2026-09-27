@@ -69,7 +69,7 @@ type Config struct {
 // id is kept so existing config.toml files keep resolving.)
 var mochaTheme = Theme{
 	Base: "mocha", Bg: "#161310", Surface: "#2E2822", Dim: "#0F0D0B",
-	Text: "#EDE0C8", Muted: "#9C8D75", Accent: "#D9A44C", Accent2: "#6FA598",
+	Text: "#EDE0C8", Muted: "#9C8D75", Accent: "#D9A44C", Accent2: "#43B3AE",
 	Success: "#8FA86B", Warn: "#C98A5E", Error: "#C96A5A",
 }
 

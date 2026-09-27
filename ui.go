@@ -28,10 +28,17 @@ var (
 	colText    = lipgloss.Color("#EDE0C8")
 	colMuted   = lipgloss.Color("#9C8D75")
 	colAccent  = lipgloss.Color("#D9A44C")
-	colAccent2 = lipgloss.Color("#6FA598")
-	colError   = lipgloss.Color("#F38BA8")
+	colAccent2 = lipgloss.Color("#43B3AE")
+	// colBrand/colBrand2 are the fixed house identity (brass +
+	// verdigris). applyAccent NEVER touches them: per-track color
+	// is capped at the playing-row/selection surface, everything
+	// else stays brand so the instrument keeps its face no matter
+	// how loud the current art is.
+	colBrand  = lipgloss.Color("#D9A44C")
+	colBrand2 = lipgloss.Color("#43B3AE")
+	colError  = lipgloss.Color("#F38BA8")
 
-	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colBrand)
 	styleBlurBorder    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
 	// One-frame system: heavy outer edge + quiet internal
 	// dividers. Weight carries hierarchy; color stays out of the way.
@@ -39,10 +46,10 @@ var (
 	styleDivider    = lipgloss.NewStyle().Foreground(colSurface)
 	styleSelected   = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleHL         = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL         = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
 	styleMuted      = lipgloss.NewStyle().Foreground(colMuted)
-	styleTitle      = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleArtist     = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
+	styleTitle      = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
+	styleArtist     = lipgloss.NewStyle().Foreground(colBrand2).Bold(true)
 	styleError      = lipgloss.NewStyle().Foreground(colError)
 )
 
@@ -126,17 +133,19 @@ func buildBaseStyles() {
 	colMuted = lipgloss.Color(t.Muted)
 	colAccent = lipgloss.Color(t.Accent)
 	colAccent2 = lipgloss.Color(t.Accent2)
+	colBrand = lipgloss.Color(t.Accent)
+	colBrand2 = lipgloss.Color(t.Accent2)
 	colError = lipgloss.Color(t.Error)
-	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colBrand).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
 	styleDivider = lipgloss.NewStyle().Foreground(colSurface)
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
 	styleMuted = lipgloss.NewStyle().Foreground(colMuted)
-	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleArtist = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
+	styleTitle = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
+	styleArtist = lipgloss.NewStyle().Foreground(colBrand2).Bold(true)
 	styleError = lipgloss.NewStyle().Foreground(colError)
 }
 
@@ -1120,7 +1129,7 @@ func (m model) renderBar(pct float64) string {
 	if pct > 1 {
 		pct = 1
 	}
-	a, b := m.vizAccent()
+	a, b := string(themeBase.Accent), string(themeBase.Accent2)
 	filled := int(pct * float64(w))
 	var sb strings.Builder
 	for i := 0; i < w; i++ {
@@ -1256,10 +1265,10 @@ func (m *model) applyAccent(prim, sec string) {
 	}
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleArtist = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
-	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
+	styleHL = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
+	styleTitle = lipgloss.NewStyle().Foreground(colBrand).Bold(true)
+	styleArtist = lipgloss.NewStyle().Foreground(colBrand2).Bold(true)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colBrand).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
 }
