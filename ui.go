@@ -120,8 +120,8 @@ func buildBaseStyles() {
 	colAccent = lipgloss.Color(t.Accent)
 	colAccent2 = lipgloss.Color(t.Accent2)
 	colError = lipgloss.Color(t.Error)
-	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
-	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
+	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
@@ -938,11 +938,17 @@ func (m *model) applyAccent(prim, sec string) {
 	m.appliedAc = key
 	colAccent = lipgloss.Color(prim)
 	colAccent2 = lipgloss.Color(sec)
+	if prim == themeBase.Accent && sec == themeBase.Accent2 {
+		colBG = lipgloss.Color(themeBase.Bg)
+	} else {
+		colBG = lipgloss.Color(bgTint(prim))
+	}
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
+	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
+	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	m.bar = progress.New(
 		progress.WithGradient(prim, sec),
 		progress.WithoutPercentage(),

@@ -40,3 +40,34 @@ func TestRealArtContrast(t *testing.T) {
 		t.Fatalf("contrast below large-text floor: %.2f", min)
 	}
 }
+
+// TestBodyTextVsDynamicBg extends coverage globally: body text against
+// the per-track dynamic background tint (not just the Now Playing
+// scrim case above). Dark band guarantees the higher 4.5 bar.
+func TestBodyTextVsDynamicBg(t *testing.T) {
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked, worst, worstPath := 0, 99.0, ""
+	for _, tr := range tracks {
+		img, _, _, err := cachedArt(tr.Path)
+		if err != nil || img == nil {
+			continue
+		}
+		prim, _ := accentPair(img)
+		if prim == "" {
+			prim = "#CBA6F7"
+		}
+		bg := bgTint(prim)
+		c := contrastRatio("#CDD6F4", bg)
+		checked++
+		if c < worst {
+			worst, worstPath = c, tr.Path
+		}
+	}
+	t.Logf("body text vs dynamic bg over %d tracks: worst %.2f (%s)", checked, worst, worstPath)
+	if worst < 4.5 {
+		t.Fatalf("body contrast below 4.5: %.2f", worst)
+	}
+}

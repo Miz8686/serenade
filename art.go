@@ -143,6 +143,21 @@ func toRGBA(img image.Image) *image.RGBA {
 	return out
 }
 
+// bgTint derives a low-luminance, desaturated background tint from a
+// sampled accent color: hue is preserved so the UI echoes the art,
+// but lightness is clamped to a narrow dark band and saturation halved
+// so body text stays legible on it no matter how bright or pastel the
+// source art is. Never use a raw sampled color as a background.
+func bgTint(hex string) string {
+	var r, g, b int
+	fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b)
+	h, s, v := rgbToHsv(float64(r)/255, float64(g)/255, float64(b)/255)
+	s *= 0.55
+	v = minF(0.16, maxF(0.07, v))
+	rr, gg, bb := hsvToRgb(h, s, v)
+	return fmt.Sprintf("#%02x%02x%02x", int(rr*255), int(gg*255), int(bb*255))
+}
+
 // accentPair buckets hue (36 buckets), weights by saturation*value,
 // returns primary (top bucket, brightness-floored) and secondary
 // (runner-up). Empty strings when nothing usable — caller falls back

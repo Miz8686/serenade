@@ -232,3 +232,19 @@ func TestBgRender(t *testing.T) {
 		t.Fatalf("bg text missing content or background codes")
 	}
 }
+
+func TestBgTintBand(t *testing.T) {
+	// Any input hue lands in a narrow dark band, never raw brightness.
+	for _, in := range []string{"#ffffff", "#ff0000", "#cba6f7", "#94e2d5", "#11111b"} {
+		got := bgTint(in)
+		var r, g, b int
+		fmt.Sscanf(got, "#%02x%02x%02x", &r, &g, &b)
+		_, _, v := rgbToHsv(float64(r)/255, float64(g)/255, float64(b)/255)
+		if v < 0.06 || v > 0.17 {
+			t.Fatalf("bgTint(%s) = %s lightness out of band (v=%.2f)", in, got, v)
+		}
+		if ratio := contrastRatio("#CDD6F4", got); ratio < 4.5 {
+			t.Fatalf("bgTint(%s) = %s contrast %.2f below 4.5", in, got, ratio)
+		}
+	}
+}
