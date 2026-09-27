@@ -65,7 +65,7 @@ All rebindable in `config.toml`. Playback keys work from either pane.
 
 ```toml
 [theme]
-base = "mocha"   # mocha | mono (high-contrast)
+base = "mocha"   # mocha (house palette) | mono (high-contrast)
 # accent = "#CBA6F7"   # any token overridable; per-track art accent wins
 # background_art = true  # blurred art behind Now Playing text (default off)
 

@@ -17,7 +17,7 @@ func TestRealArtContrast(t *testing.T) {
 		if err != nil || img == nil {
 			continue
 		}
-		scr := scrimToward(toRGBA(img), "#1E1E2E", 0.35)
+		scr := scrimToward(toRGBA(img), "#161310", 0.35)
 		// worst pixel: sample a grid, take min contrast vs text
 		b := scr.Bounds()
 		local := 99.0
@@ -25,7 +25,7 @@ func TestRealArtContrast(t *testing.T) {
 			for x := 0; x < b.Dx(); x += 10 {
 				r, g, bl, _ := scr.RGBAAt(x, y).RGBA()
 				hex := fmt.Sprintf("#%02x%02x%02x", int(r>>8), int(g>>8), int(bl>>8))
-				if c := contrastRatio("#CDD6F4", hex); c < local {
+				if c := contrastRatio("#EDE0C8", hex); c < local {
 					local = c
 				}
 			}
@@ -57,10 +57,10 @@ func TestBodyTextVsDynamicBg(t *testing.T) {
 		}
 		prim, _ := accentPair(img)
 		if prim == "" {
-			prim = "#CBA6F7"
+			prim = "#D9A44C"
 		}
 		bg := bgTint(prim)
-		c := contrastRatio("#CDD6F4", bg)
+		c := contrastRatio("#EDE0C8", bg)
 		checked++
 		if c < worst {
 			worst, worstPath = c, tr.Path

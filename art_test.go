@@ -181,10 +181,10 @@ func TestScrimContrast(t *testing.T) {
 	// Worst case (pure-white art) must clear the large-text floor of
 	// 3.0. Real-library worst case measured 3.59 — the known tension
 	// between readability and visible art, bounded, not papered over.
-	scr := scrimToward(white, "#1E1E2E", 0.35)
+	scr := scrimToward(white, "#161310", 0.35)
 	r, g, b, _ := scr.RGBAAt(4, 4).RGBA()
 	got := fmt.Sprintf("#%02x%02x%02x", int(r>>8), int(g>>8), int(b>>8))
-	if ratio := contrastRatio("#CDD6F4", got); ratio < 3.0 {
+	if ratio := contrastRatio("#EDE0C8", got); ratio < 3.0 {
 		t.Fatalf("contrast %.2f below 3.0 on %s", ratio, got)
 	}
 }
@@ -244,7 +244,7 @@ func TestBgTintBand(t *testing.T) {
 		if v < 0.06 || v > 0.17 {
 			t.Fatalf("bgTint(%s) = %s lightness out of band (v=%.2f)", in, got, v)
 		}
-		if ratio := contrastRatio("#CDD6F4", got); ratio < 4.5 {
+		if ratio := contrastRatio("#EDE0C8", got); ratio < 4.5 {
 			t.Fatalf("bgTint(%s) = %s contrast %.2f below 4.5", in, got, ratio)
 		}
 	}

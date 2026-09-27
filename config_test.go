@@ -9,7 +9,7 @@ func TestConfigDefaults(t *testing.T) {
 	t.Cleanup(func() { os.Setenv("HOME", "/home/miz") })
 	os.Setenv("HOME", "/tmp/nonexistent-home-xyz")
 	c := loadConfig()
-	if c.Theme.Accent != "#CBA6F7" || !c.keyIs("quit", "q") || !c.keyIs("play", "enter") {
+	if c.Theme.Accent != "#D9A44C" || !c.keyIs("quit", "q") || !c.keyIs("play", "enter") {
 		t.Fatalf("defaults wrong: %+v", c.Theme)
 	}
 }

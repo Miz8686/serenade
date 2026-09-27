@@ -64,10 +64,13 @@ type Config struct {
 	Keys  Keys  `toml:"keys"`
 }
 
+// mochaTheme is the DEFAULT house palette: brass & verdigris on warm
+// ink — an original instrument palette, not a stock theme. (The "mocha"
+// id is kept so existing config.toml files keep resolving.)
 var mochaTheme = Theme{
-	Base: "mocha", Bg: "#1E1E2E", Surface: "#313244", Dim: "#181825",
-	Text: "#CDD6F4", Muted: "#9399B2", Accent: "#CBA6F7", Accent2: "#89B4FA",
-	Success: "#A6E3A1", Warn: "#F9E2AF", Error: "#F38BA8",
+	Base: "mocha", Bg: "#161310", Surface: "#2E2822", Dim: "#0F0D0B",
+	Text: "#EDE0C8", Muted: "#9C8D75", Accent: "#D9A44C", Accent2: "#6FA598",
+	Success: "#8FA86B", Warn: "#C98A5E", Error: "#C96A5A",
 }
 
 var monoTheme = Theme{

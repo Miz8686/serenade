@@ -21,20 +21,20 @@ import (
 	"golang.org/x/image/draw"
 )
 
-// Phase-1 theme: single hardcoded Mocha accent set. Dynamic extraction
-// is explicitly Phase 2 — see ROADMAP in the project brief.
+// House palette defaults (mirrors mochaTheme in config.go until
+// buildBaseStyles runs): brass & verdigris on warm ink.
 var (
-	colBG      = lipgloss.Color("#1E1E2E")
-	colSurface = lipgloss.Color("#313244")
-	colText    = lipgloss.Color("#CDD6F4")
-	colMuted   = lipgloss.Color("#9399B2")
-	colAccent  = lipgloss.Color("#CBA6F7")
-	colAccent2 = lipgloss.Color("#89B4FA")
+	colBG      = lipgloss.Color("#161310")
+	colSurface = lipgloss.Color("#2E2822")
+	colText    = lipgloss.Color("#EDE0C8")
+	colMuted   = lipgloss.Color("#9C8D75")
+	colAccent  = lipgloss.Color("#D9A44C")
+	colAccent2 = lipgloss.Color("#6FA598")
 	colError   = lipgloss.Color("#F38BA8")
 
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
 	styleBlurBorder    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
-	styleSelected      = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
+	styleSelected      = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying       = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL            = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted         = lipgloss.NewStyle().Foreground(colMuted)
@@ -124,7 +124,7 @@ func buildBaseStyles() {
 	colError = lipgloss.Color(t.Error)
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
-	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
+	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted = lipgloss.NewStyle().Foreground(colMuted)
@@ -1085,7 +1085,7 @@ func (m *model) applyAccent(prim, sec string) {
 	} else {
 		colBG = lipgloss.Color(bgTint(prim))
 	}
-	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#11111B")).Bold(true)
+	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)

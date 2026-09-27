@@ -289,10 +289,10 @@ func TestIdleVizUsesAccent(t *testing.T) {
 	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
 	m.width, m.height = 167, 39
 	m.vizActive = false
-	m.artPrim, m.artSec = "#CBA6F7", "#89B4FA"
+	m.artPrim, m.artSec = "#D9A44C", "#6FA598"
 	out := m.renderViz()
-	// #CBA6F7 = 203,166,247 — the idle strip must carry it raw.
-	if !strings.Contains(out, "\x1b[38;2;203;166;247m") {
+	// #D9A44C = 217,164,76 — the idle strip must carry it raw.
+	if !strings.Contains(out, "\x1b[38;2;217;164;76m") {
 		t.Fatalf("idle viz missing accent color: %q", out[:min(120, len(out))])
 	}
 	if strings.Count(out, "\n") != 1 {
