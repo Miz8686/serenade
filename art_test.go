@@ -294,3 +294,22 @@ func TestAccentPair1800Themes(t *testing.T) {
 		t.Fatalf("1-800 art fell back instead of theming")
 	}
 }
+
+func TestRevealMask(t *testing.T) {
+	img := stripeImage(144, 144, 6, 0.8, 0.8)
+	full := renderHalfBlock(img, 24, 8)
+	masked0 := renderHalfBlockMasked(img, 24, 8, 0)
+	if strings.Contains(masked0, "▀") {
+		t.Fatalf("zero-progress wipe must paint nothing")
+	}
+	if strings.Count(masked0, "\n") != strings.Count(full, "\n") {
+		t.Fatalf("wipe must hold row count: %d vs %d", strings.Count(masked0, "\n"), strings.Count(full, "\n"))
+	}
+	if got := renderHalfBlockMasked(img, 24, 8, 24); got != full {
+		t.Fatalf("full-progress wipe must equal the plain render")
+	}
+	half := renderHalfBlockMasked(img, 24, 8, 12)
+	if n := strings.Count(half, "▀"); n != 8*12 {
+		t.Fatalf("half wipe painted %d cells, want %d", n, 8*12)
+	}
+}

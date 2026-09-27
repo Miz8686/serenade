@@ -425,6 +425,14 @@ func contrastRatio(fgHex, bgHex string) float64 {
 // yields roughly-square-looking output. Run-length emits color codes
 // only on change; callers size img appropriately (cached pixels reused).
 func renderHalfBlock(img image.Image, cols, rows int) string {
+	return renderHalfBlockMasked(img, cols, rows, cols)
+}
+
+// renderHalfBlockMasked maps cached pixels to cells, painting only
+// columns below maxCol — the track-start reveal wipes left to right
+// across fixed frames. Masked cells emit blanks (with one reset on
+// entry, never per cell), so row count and width never wobble.
+func renderHalfBlockMasked(img image.Image, cols, rows, maxCol int) string {
 	if cols < 1 || rows < 1 {
 		return ""
 	}
@@ -442,8 +450,19 @@ func renderHalfBlock(img image.Image, cols, rows int) string {
 		}
 		b.WriteString("▀")
 	}
+	masked := false
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
+			if c >= maxCol {
+				if !masked {
+					b.WriteString("\x1b[0m")
+					lastFG, lastBG = -1, -1
+					masked = true
+				}
+				b.WriteString(" ")
+				continue
+			}
+			masked = false
 			sx := sb.Min.X + c*sb.Dx()/cols
 			sy := sb.Min.Y + r*sb.Dy()/rows
 			top := img.At(sx, min(sb.Max.Y-1, sy))

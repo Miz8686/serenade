@@ -490,3 +490,57 @@ func TestIconWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestRevealStops(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.artImg = stripeImage(144, 144, 6, 0.8, 0.8)
+	m.reveal = 2
+	um, cmd := m.Update(revealTickMsg{})
+	mm := um.(model)
+	if mm.reveal != 1 || cmd == nil {
+		t.Fatalf("mid-wipe must continue: reveal=%d cmd-nil=%v", mm.reveal, cmd == nil)
+	}
+	um, cmd = mm.Update(revealTickMsg{})
+	mm = um.(model)
+	if mm.reveal != 0 || cmd != nil {
+		t.Fatalf("wipe must stop after fixed frames: reveal=%d cmd-nil=%v", mm.reveal, cmd == nil)
+	}
+	if mm.artBlock != mm.renderArt() {
+		t.Fatalf("settled wipe must equal the plain render")
+	}
+}
+
+func TestRevealStartsOnTransition(t *testing.T) {
+	os.Setenv("HOME", "/home/miz")
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b Track
+	for _, tr := range tracks {
+		if strings.HasSuffix(tr.Path, "Papercut.flac") {
+			a = tr
+		}
+		if strings.HasSuffix(tr.Path, "Faint.flac") {
+			b = tr
+		}
+	}
+	if a.Path == "" || b.Path == "" {
+		t.Skip("reference tracks missing")
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks, m.view = tracks, tracks
+	m.status = Status{State: "playing", File: a.Path}
+	m.prev = m.status
+	m.loadArt(a.Path)
+	um, _ := m.Update(statusMsg{st: Status{State: "playing", File: b.Path}})
+	mm := um.(model)
+	if mm.reveal != revealFrames {
+		t.Fatalf("track-start must arm the wipe: reveal=%d", mm.reveal)
+	}
+	if strings.Contains(mm.artBlock, "▀") {
+		t.Fatalf("wipe frame zero must start blank")
+	}
+}

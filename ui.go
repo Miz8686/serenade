@@ -90,6 +90,8 @@ type model struct {
 	// Transport button flash feedback.
 	flash      string
 	flashZones []btnZone
+	// Track-start reveal: fixed-frame art wipe, then it stops.
+	reveal int
 	// Phase-3 visualizer state.
 	tap       *vizTap
 	levels    []float64
@@ -305,6 +307,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.reveal = 0
 		m.layoutPanes()
 		if m.artImg != nil {
 			m.artBlock = m.renderArt()
@@ -351,6 +354,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// all of them surface here as a file change.
 			if m.status.File != m.prev.File {
 				m.followPlaying(m.status.File)
+				if cmd := m.startReveal(); cmd != nil {
+					m.syncDetail()
+					if m.focused {
+						return m, tea.Batch(pollBackend(m.be), m.syncViz(), cmd)
+					}
+					return m, cmd
+				}
 			}
 		}
 		m.syncDetail()
@@ -374,6 +384,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case flashMsg:
 		m.flash = ""
+		return m, nil
+
+	case revealTickMsg:
+		if m.reveal <= 0 {
+			return m, nil
+		}
+		m.reveal--
+		m.artBlock = m.renderArtMasked(1 - float64(m.reveal)/revealFrames)
+		if m.reveal > 0 {
+			return m, revealTick()
+		}
 		return m, nil
 
 	case vizTickMsg:
@@ -1403,6 +1424,36 @@ func (m model) renderArt() string {
 	return renderHalfBlock(dst, cols, rows)
 }
 
+// renderArtMasked renders the wipe at progress p in [0,1]:
+// columns below p*cols paint, the rest hold blank. p=1 is the full
+// render by construction.
+func (m model) renderArtMasked(p float64) string {
+	if m.artImg == nil {
+		return m.emptyArt()
+	}
+	cols, rows := m.artBox()
+	if m.kitty {
+		return m.renderKitty(cols, rows)
+	}
+	sb := m.artImg.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, cols, rows*2))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), m.artImg, sb, draw.Over, nil)
+	maxCol := int(p * float64(cols))
+	return renderHalfBlockMasked(dst, cols, rows, maxCol)
+}
+
+// startReveal begins the fixed-frame wipe when a new track brings
+// art. No art (emptyArt), background mode (no art block), and the
+// untested Kitty path all skip it — nil cmd means "nothing to do".
+func (m *model) startReveal() tea.Cmd {
+	if m.artImg == nil || m.kitty || m.bgMode() {
+		return nil
+	}
+	m.reveal = revealFrames
+	m.artBlock = m.renderArtMasked(0)
+	return revealTick()
+}
+
 // renderKitty emits transmit+display frames sized near the box, then
 // blank lines reserving the space (terminal overlays don't flow text).
 // UNTESTED against a real Kitty-capable terminal (none on this machine);
@@ -1570,6 +1621,19 @@ type btnZone struct {
 }
 
 type flashMsg struct{}
+
+// revealTickMsg advances the track-start art wipe by one frame.
+type revealTickMsg struct{}
+
+// revealFrames is the FULL wipe: fixed count, then it stops — the
+// one orchestrated motion in the app, tied to a real event.
+const revealFrames = 10
+
+func revealTick() tea.Cmd {
+	return tea.Tick(45*time.Millisecond, func(time.Time) tea.Msg {
+		return revealTickMsg{}
+	})
+}
 
 // barZone tracks the progress bar's rendered region, sharing the
 // runewidth geometry approach with the transport buttons.
