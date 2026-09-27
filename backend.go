@@ -238,6 +238,17 @@ func (b *backend) seek(delta int) error {
 	_, err := b.runRemote("-C", fmt.Sprintf("seek %+d", delta))
 	return err
 }
+
+// seekAbs jumps to an absolute second. cmus syntax is "seek NN"
+// (bare number = absolute; signed = relative) per cmus(1) — verified
+// against the man page, not assumed from the relative form.
+func (b *backend) seekAbs(pos int) error {
+	if pos < 0 {
+		pos = 0
+	}
+	_, err := b.runRemote("-C", fmt.Sprintf("seek %d", pos))
+	return err
+}
 func (b *backend) volume(delta string) error {
 	_, err := b.runRemote("-C", "vol "+delta)
 	return err

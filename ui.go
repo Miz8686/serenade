@@ -593,7 +593,17 @@ func pickNext(queue []string, tracks []Track, prevFile string, shuf *shuffleStat
 // player-next/prev on its single-file -f playlist either no-ops or
 // restarts the current track — both reported as bugs.
 func (m *model) playNext() {
-	next, rest, ok := pickNext(m.queue, m.tracks, m.status.File, &m.shuf)
+	prev := m.status.File
+	if prev == "" && len(m.queue) == 0 && len(m.tracks) > 0 {
+		// Idle with a library: start from the top instead of
+		// silently no-op'ing (same "hit it and it just works"
+		// principle as shuffle-on-idle).
+		if err := m.be.playFile(m.tracks[0].Path); err != nil {
+			m.beErr = err.Error()
+		}
+		return
+	}
+	next, rest, ok := pickNext(m.queue, m.tracks, prev, &m.shuf)
 	if !ok {
 		return
 	}
@@ -604,6 +614,9 @@ func (m *model) playNext() {
 }
 
 func (m *model) playPrev() {
+	// Note: prevTrackPath falls back to the last track on unknown
+	// current file, so prev-from-idle starts at the bottom with no
+	// special-casing needed here.
 	prev, ok := prevTrackPath(m.tracks, m.status.File)
 	if !ok {
 		return
@@ -711,6 +724,23 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		msg.Y >= listTop+2 && msg.Y < listTop+2+m.visibleRows()
 	inDetail := !inList && msg.X >= m.listOuterWidth() &&
 		msg.Y < m.height-m.statusH()
+	// Clickable status regions: progress bar (seek) on the first
+	// content line, transport buttons on the second.
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+		barY, barX0, barX1 := m.barZone()
+		if msg.Y == barY && msg.X >= barX0 && msg.X < barX1 && m.status.Duration > 0 {
+			frac := float64(msg.X-barX0) / float64(max(1, barX1-barX0))
+			if frac < 0 {
+				frac = 0
+			}
+			if frac > 1 {
+				frac = 1
+			}
+			target := int(frac * float64(m.status.Duration))
+			_ = m.be.seekAbs(target)
+			return m, nil
+		}
+	}
 	// Status-bar transport buttons live on the second content line:
 	// one border row + bar line above it.
 	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress &&
@@ -1228,6 +1258,13 @@ type btnZone struct {
 }
 
 type flashMsg struct{}
+
+// barZone tracks the progress bar's rendered region, sharing the
+// runewidth geometry approach with the transport buttons.
+func (m model) barZone() (y, x0, x1 int) {
+	w := max(10, m.width-30)
+	return m.height - 3, 1, 1 + w
+}
 
 // statusLine builds the second status-bar line and its button zones.
 // Pure function of width/state: View and handleMouse share it so clicks

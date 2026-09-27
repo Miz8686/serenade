@@ -227,3 +227,29 @@ func TestPrevTrackPath(t *testing.T) {
 		t.Fatalf("empty must not advance")
 	}
 }
+
+func TestBarZone(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	y, x0, x1 := m.barZone()
+	if y != 36 || x0 != 1 || x1 != 138 {
+		t.Fatalf("barZone = %d,%d,%d want 36,1,138", y, x0, x1)
+	}
+}
+
+func TestClickPrevDispatches(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{{Path: "/a"}, {Path: "/b"}}
+	m.view = m.tracks
+	m.status = Status{State: "playing", File: "/b"}
+	// prev button zone starts at content X=0 -> screen X=1, Y=37.
+	um, _ := m.handleMouse(tea.MouseMsg{X: 1, Y: 37, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	mm := um.(model)
+	if mm.flash != "prev" {
+		t.Fatalf("prev click did not dispatch (flash=%q)", mm.flash)
+	}
+	if mm.beErr == "" {
+		t.Fatalf("playPrev did not attempt backend call (dead backend must error)")
+	}
+}
