@@ -34,12 +34,16 @@ var (
 
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
 	styleBlurBorder    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface)
-	styleSelected      = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
-	stylePlaying       = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleHL            = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleMuted         = lipgloss.NewStyle().Foreground(colMuted)
-	styleTitle         = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	styleError         = lipgloss.NewStyle().Foreground(colError)
+	// One-frame system: heavy outer edge + quiet internal
+	// dividers. Weight carries hierarchy; color stays out of the way.
+	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted)
+	styleDivider    = lipgloss.NewStyle().Foreground(colSurface)
+	styleSelected   = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
+	stylePlaying    = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleHL         = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleMuted      = lipgloss.NewStyle().Foreground(colMuted)
+	styleTitle      = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleError      = lipgloss.NewStyle().Foreground(colError)
 )
 
 type focusPane int
@@ -124,6 +128,8 @@ func buildBaseStyles() {
 	colError = lipgloss.Color(t.Error)
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
+	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
+	styleDivider = lipgloss.NewStyle().Foreground(colSurface)
 	styleSelected = lipgloss.NewStyle().Background(colAccent).Foreground(lipgloss.Color("#161310")).Bold(true)
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
@@ -176,9 +182,13 @@ func pollBackend(be *backend) tea.Cmd {
 }
 
 func (m model) visibleRows() int {
-	// List pane height minus status box, border (2) and title line (1).
-	return max(1, m.height-m.statusH()-2-1)
+	// Top area minus the list title line: outer frame (2) + status
+	// block (divider, bar, buttons = 3) + title (1).
+	return max(1, m.height-2-3-1)
 }
+
+// topH is the content height above the status divider.
+func (m model) topH() int { return max(1, m.height-2-3) }
 
 func (m *model) clampCursor() {
 	n := len(m.view)
@@ -827,7 +837,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	listTop, listLeft, _ := m.listGeometry()
 	inList := msg.X >= listLeft+1 && msg.X < listLeft+1+m.listInnerWidth() &&
 		msg.Y >= listTop+2 && msg.Y < listTop+2+m.visibleRows()
-	inDetail := !inList && msg.X >= m.listOuterWidth() &&
+	inDetail := !inList && msg.X >= 2+m.listPaneW() &&
 		msg.Y < m.height-m.statusH()
 	// Clickable status regions: progress bar (seek) on the first
 	// content line, transport buttons on the second.
@@ -912,19 +922,29 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // ---- geometry: must match View exactly or clicks land wrong ----
 
 func (m model) listGeometry() (top, left, width int) {
-	// Status bar occupies bottom statusH lines; list spans the rest.
-	return 0, 0, m.listOuterWidth()
+	// Rows start below the outer frame + title; list spans its pane.
+	return 0, 0, m.listPaneW()
 }
-func (m model) listOuterWidth() int { return max(20, m.width*60/100) }
-func (m model) listInnerWidth() int { return max(1, m.listOuterWidth()-2) }
-func (m model) statusH() int        { return 4 }
+
+// One frame, not three boxes: a single heavy outer border, light
+// internal dividers. listPaneW is the library content width (no box);
+// rightPaneW is everything right of the divider.
+func (m model) listPaneW() int { return max(20, (m.width-2)*60/100) }
+func (m model) rightPaneW() int {
+	return max(20, m.width-2-m.listPaneW()-1)
+}
+func (m model) listInnerWidth() int { return max(1, m.listPaneW()) }
+
+// statusH is the bottom reservation: divider + bar + buttons + the
+// outer frame's own row. visibleRows hangs off it.
+func (m model) statusH() int { return 4 }
 
 type vizTickMsg struct{}
 
 // vizBars returns the bar count for the current width: one column +
 // one gutter per bar.
 func (m model) vizBars() int {
-	inner := max(10, m.width-m.listOuterWidth()-2)
+	inner := m.rightPaneW()
 	return max(8, min(48, inner/2))
 }
 
@@ -991,7 +1011,7 @@ func (m model) vizAccent() (string, string) {
 // peak-hold markers, idle/error states when the loop is off.
 func (m model) renderViz() string {
 	bars := m.vizBars()
-	inner := max(10, m.width-m.listOuterWidth()-2)
+	inner := m.rightPaneW()
 	if !m.vizActive {
 		if m.vizErr != "" {
 			return styleError.Render("visualizer: "+m.vizErr) + "\n" + strings.Repeat("\n", vizHeight-1)
@@ -1042,8 +1062,8 @@ func (m model) renderViz() string {
 }
 
 func (m *model) layoutPanes() {
-	rightW := max(20, m.width-m.listOuterWidth())
-	m.detail.Width = max(10, rightW-2)
+	rightW := m.rightPaneW()
+	m.detail.Width = max(10, rightW)
 	m.syncDetail()
 }
 
@@ -1059,7 +1079,7 @@ func (m model) vizReserve() int {
 // maxTextH is the tallest the Now Playing viewport may grow: whatever
 // remains after the art and visualizer reservations.
 func (m model) maxTextH() int {
-	rightInnerH := max(8, m.height-m.statusH()-2)
+	rightInnerH := m.topH()
 	_, artRows := m.artBox()
 	return max(3, rightInnerH-artRows-m.vizReserve())
 }
@@ -1091,6 +1111,7 @@ func (m *model) applyAccent(prim, sec string) {
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
+	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
 	m.bar = progress.New(
 		progress.WithGradient(prim, sec),
 		progress.WithoutPercentage(),
@@ -1103,11 +1124,11 @@ func (m *model) applyAccent(prim, sec string) {
 // render target is what fixes the stair-stepping on diagonals, which
 // is a resolution ceiling, not a renderer technique problem.
 func (m model) artBox() (cols, rows int) {
-	cols = max(10, m.width-m.listOuterWidth()-2)
+	cols = max(10, m.rightPaneW())
 	if m.bgMode() {
 		return cols, 0
 	}
-	innerH := max(8, m.height-m.statusH()-2)
+	innerH := m.topH()
 	rows = innerH * 50 / 100
 	rows = min(rows, max(4, innerH-10))
 	rows = max(4, rows)
@@ -1484,6 +1505,9 @@ func (m model) View() string {
 	if m.indexErr != "" {
 		return styleError.Render("library: " + m.indexErr)
 	}
+	listW, rightW := m.listPaneW(), m.rightPaneW()
+	contentW := listW + 1 + rightW
+	topH := m.topH()
 	// Library list (current filter view, with fuzzy highlights).
 	var rows []string
 	vis := m.visibleRows()
@@ -1516,19 +1540,25 @@ func (m model) View() string {
 	for len(rows) < vis {
 		rows = append(rows, "")
 	}
-	listBody := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	padCol := func(w int, lines []string) string {
+		st := lipgloss.NewStyle().Width(w)
+		out := make([]string, len(lines))
+		for i, l := range lines {
+			out[i] = st.Render(l)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, out...)
+	}
 	var listTitle string
 	if m.searching {
 		listTitle = m.searchBox.View()
+	} else if m.focus == focusList {
+		listTitle = styleHL.Render(fmt.Sprintf(" library (%d)  / search ", len(m.view)))
 	} else {
 		listTitle = styleMuted.Render(fmt.Sprintf(" library (%d)  / search ", len(m.view)))
 	}
-	list := lipgloss.JoinVertical(lipgloss.Left, listTitle, listBody)
-	if m.focus == focusList {
-		list = styleFocusedBorder.Width(m.listOuterWidth() - 2).Render(list)
-	} else {
-		list = styleBlurBorder.Width(m.listOuterWidth() - 2).Render(list)
-	}
+	listCol := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.NewStyle().Width(listW).Render(listTitle),
+		padCol(listW, rows))
 
 	// Right pane, top to bottom: Now Playing text (over blurred art
 	// in background mode, else plain viewport), visualizer strip,
@@ -1544,12 +1574,23 @@ func (m model) View() string {
 	if !m.bgMode() {
 		parts = append(parts, m.artBlock)
 	}
-	right := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	if m.focus == focusDetail {
-		right = styleFocusedBorder.Width(m.detail.Width).Render(right)
-	} else {
-		right = styleBlurBorder.Width(m.detail.Width).Render(right)
+	rightCol := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// Pad the short column so the divider runs the full top height.
+	nRight := strings.Count(rightCol, "\n") + 1
+	for nRight < topH {
+		rightCol += "\n"
+		nRight++
 	}
+
+	// One frame: heavy outer edge, light internal dividers. Line
+	// weight does the hierarchy work — nothing in between.
+	var div strings.Builder
+	for i := 0; i < topH; i++ {
+		div.WriteString("\u2502\n")
+	}
+	divider := styleDivider.Render(strings.TrimRight(div.String(), "\n"))
+	top := lipgloss.JoinHorizontal(lipgloss.Top, listCol, divider, rightCol)
+
 	pct := 0.0
 	if m.status.Duration > 0 {
 		pct = float64(m.status.Position) / float64(m.status.Duration)
@@ -1558,13 +1599,12 @@ func (m model) View() string {
 		}
 	}
 	m.bar.Width = max(10, m.width-30)
-	barLine := m.bar.ViewAs(pct)
+	barLine := lipgloss.NewStyle().Width(contentW).Render(m.bar.ViewAs(pct))
 	statusText, _ := m.statusLine()
-	// Compose: list left, art+detail right-top, status full-width bottom.
-	top := lipgloss.JoinHorizontal(lipgloss.Top, list, right)
-	return lipgloss.JoinVertical(lipgloss.Left, top,
-		styleBlurBorder.Width(m.width-2).Render(
-			lipgloss.JoinVertical(lipgloss.Left, barLine, statusText)))
+	statusText = lipgloss.NewStyle().Width(contentW).Render(statusText)
+	hrule := styleDivider.Render(strings.Repeat("\u2500", contentW))
+	content := lipgloss.JoinVertical(lipgloss.Left, top, hrule, barLine, statusText)
+	return styleOuterFrame.Width(contentW).Render(content)
 }
 
 func min(a, b int) int {

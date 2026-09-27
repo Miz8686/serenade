@@ -256,7 +256,7 @@ func TestClickPrevDispatches(t *testing.T) {
 
 func TestFollowPlaying(t *testing.T) {
 	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
-	m.width, m.height = 167, 39 // visibleRows = 32
+	m.width, m.height = 167, 39 // visibleRows = 33
 	var tracks []Track
 	for i := 0; i < 50; i++ {
 		tracks = append(tracks, Track{Path: "/t" + string(rune('a'+i))})
@@ -267,9 +267,9 @@ func TestFollowPlaying(t *testing.T) {
 	if m.cursor != 40 {
 		t.Fatalf("cursor = %d, want 40", m.cursor)
 	}
-	// Centered: 40-16=24, clamped to len-vis=18.
-	if m.offset != 18 {
-		t.Fatalf("offset = %d, want 18", m.offset)
+	// Centered: 40-16=24, clamped to len-vis=17.
+	if m.offset != 17 {
+		t.Fatalf("offset = %d, want 17", m.offset)
 	}
 	if m.cursor < m.offset || m.cursor >= m.offset+m.visibleRows() {
 		t.Fatalf("cursor %d not visible in [%d,%d)", m.cursor, m.offset, m.offset+m.visibleRows())
