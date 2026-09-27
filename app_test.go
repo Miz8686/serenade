@@ -299,3 +299,47 @@ func TestIdleVizUsesAccent(t *testing.T) {
 		t.Fatalf("idle viz must be a single compact line, got %d newlines", strings.Count(out, "\n"))
 	}
 }
+
+func TestColdTransitionFollows(t *testing.T) {
+	// Nothing playing, cursor cold at 0: the very first track-start
+	// must leave cursor AND playing marker on the same row, with no
+	// input beyond the status update itself.
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	var tracks []Track
+	for i := 0; i < 50; i++ {
+		tracks = append(tracks, Track{Path: "/t" + string(rune('a'+i))})
+	}
+	m.tracks, m.view = tracks, tracks
+	m.cursor, m.offset = 0, 0
+	um, _ := m.Update(statusMsg{st: Status{State: "playing", File: tracks[40].Path}})
+	mm := um.(model)
+	if mm.cursor != 40 {
+		t.Fatalf("cold transition: cursor = %d, want 40", mm.cursor)
+	}
+	if mm.cursor < mm.offset || mm.cursor >= mm.offset+mm.visibleRows() {
+		t.Fatalf("cold transition: cursor %d not visible", mm.cursor)
+	}
+	if mm.playingPath() != tracks[40].Path {
+		t.Fatalf("playing marker = %q", mm.playingPath())
+	}
+}
+
+func TestNaturalEndAdvances(t *testing.T) {
+	// Locks the auto-advance-on-natural-end behavior end to end:
+	// playing→stopped on the held file must attempt the next track.
+	// A future mid-session stop feature that reuses this path will
+	// trip here (see isNaturalEnd's ambiguity note) — that trip is
+	// the point: disambiguate there, update here.
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{{Path: "/a"}, {Path: "/b"}}
+	m.view = m.tracks
+	m.status = Status{State: "playing", File: "/a"}
+	m.prev = m.status
+	um, _ := m.Update(statusMsg{st: Status{State: "stopped", File: "/a"}})
+	mm := um.(model)
+	if mm.beErr == "" {
+		t.Fatalf("natural end did not attempt the next track (no playFile call)")
+	}
+}

@@ -511,6 +511,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // (cmus clears it when its library is empty; holds it otherwise).
 // A *different* file means external action — never advance. A manual
 // next() lands on a different file, so this cannot double-skip input.
+//
+// KNOWN AMBIGUITY (dormant, not a live bug): a polled playing→stopped
+// same-file transition is INDISTINGUISHABLE from an external
+// `cmus-remote -s`. This is safe only because nothing in our UI issues
+// a mid-session stop — be.stop() is quit-only, transport is toggle /
+// next / prev / play. If a real stop feature is ever added, it must
+// disambiguate (e.g. an intent flag set around the command), or every
+// user stop will instantly auto-advance. TestNaturalEndAdvances locks
+// the current behavior so that day trips a test instead of shipping
+// silently.
 func isNaturalEnd(prev, cur Status) bool {
 	return prev.State == "playing" && prev.File != "" && cur.State == "stopped" &&
 		(cur.File == prev.File || cur.File == "")
