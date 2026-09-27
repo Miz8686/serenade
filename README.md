@@ -69,6 +69,8 @@ base = "mocha"   # mocha (house palette) | mono (high-contrast)
 # accent = "#CBA6F7"   # any token overridable; per-track art accent wins
 # background_art = true  # blurred art behind Now Playing text (default off)
 
+# pulse = false  # disable the outer frame's bass breathing (default on)
+
 [keys]
 quit = ["q", "ctrl+c"]
 # any action in ? overlay rebindable the same way

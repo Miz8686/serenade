@@ -1738,6 +1738,11 @@ func fullBgFor(path string) *image.RGBA {
 
 // syncBgGrid re-memos the per-cell backdrop escapes for the current
 // content size. No art, no grid — the ink shows through instead.
+//
+// FLAGGED TENSION, not an accident: full-bleed atmosphere ships here
+// while the sharp art panel keeps its earlier bounded size (see
+// artBox). The keep-art-small call stands for the panel; the bleed is
+// a different layer doing a different job. Judge them together.
 func (m *model) syncBgGrid() {
 	m.bgGrid = nil
 	bg := fullBgFor(m.artFile)
@@ -1771,11 +1776,15 @@ func (m model) paintFullBleed(content string) string {
 	}
 	W := m.bgGridW
 	var b strings.Builder
-	cell := 0 // absolute cell index into the grid
+	cell := 0    // absolute cell index into the grid
+	lastBG := "" // exact-match dedup: flat regions share one escape
 	flushLine := func(cells int) {
 		for cells < W {
 			if cell < len(m.bgGrid) {
-				b.WriteString(m.bgGrid[cell])
+				if gb := m.bgGrid[cell]; gb != lastBG {
+					b.WriteString(gb)
+					lastBG = gb
+				}
 			}
 			b.WriteString(" ")
 			cell++
@@ -1808,7 +1817,12 @@ func (m model) paintFullBleed(content string) string {
 			}
 			w := runewidth.RuneWidth(r)
 			if !bgOn && cell < len(m.bgGrid) {
-				b.WriteString(m.bgGrid[cell])
+				if gb := m.bgGrid[cell]; gb != lastBG {
+					b.WriteString(gb)
+					lastBG = gb
+				}
+			} else if bgOn {
+				lastBG = ""
 			}
 			b.WriteString(esc.String())
 			esc.Reset()
@@ -1821,6 +1835,10 @@ func (m model) paintFullBleed(content string) string {
 			i++
 		}
 		b.WriteString(esc.String())
+		// Line boundary clears the dedup memory: trailing resets
+		// (every styled line ends with one) leave the terminal
+		// without a background, so the next bare cell must re-emit.
+		lastBG = ""
 		flushLine(cells)
 		b.WriteString("\n")
 	}
