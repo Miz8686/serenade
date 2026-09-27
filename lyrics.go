@@ -332,8 +332,39 @@ type lrclibResp struct {
 	PlainLyrics  *string `json:"plainLyrics"`
 }
 
-// fetchLyrics asks lrclib once. No key, 12s cap, honest UA.
-func fetchLyrics(artist, title, album string, duration int) (synced, plain string, err error) {
+// fetchLyrics resolves lyrics with an album-qualified query first,
+// then retries bare (artist+title): lrclib sometimes files the
+// synced variant under a different entry than the exact match
+// (verified: album-qualified Khaseka Tara returns plain-only while
+// the bare query has full synced lines). notFound is true only
+// when the track genuinely has nothing — transient failures (5xx,
+// timeouts, decode) must NOT tombstone, or one bad network day
+// silences tracks forever.
+func fetchLyrics(artist, title, album string, duration int) (synced, plain string, notFound bool, err error) {
+	get := func(q url.Values) (lrclibResp, int, error) {
+		var lr lrclibResp
+		req, err := http.NewRequest("GET", "https://lrclib.net/api/get?"+q.Encode(), nil)
+		if err != nil {
+			return lr, 0, err
+		}
+		req.Header.Set("User-Agent", "serenade/1.0")
+		client := &http.Client{Timeout: 12 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return lr, 0, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == 404 {
+			return lr, 404, nil
+		}
+		if resp.StatusCode != 200 {
+			return lr, resp.StatusCode, fmt.Errorf("lrclib %d", resp.StatusCode)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+			return lr, resp.StatusCode, err
+		}
+		return lr, resp.StatusCode, nil
+	}
 	q := url.Values{}
 	q.Set("artist_name", artist)
 	q.Set("track_name", title)
@@ -341,34 +372,46 @@ func fetchLyrics(artist, title, album string, duration int) (synced, plain strin
 	if duration > 0 {
 		q.Set("duration", fmt.Sprint(duration))
 	}
-	req, err := http.NewRequest("GET", "https://lrclib.net/api/get?"+q.Encode(), nil)
+	lr, code, err := get(q)
 	if err != nil {
-		return "", "", err
+		if code == 404 {
+			return "", "", true, fmt.Errorf("no lyrics")
+		}
+		return "", "", false, err
 	}
-	req.Header.Set("User-Agent", "serenade/1.0")
-	client := &http.Client{Timeout: 12 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", "", fmt.Errorf("lrclib %d", resp.StatusCode)
-	}
-	var lr lrclibResp
-	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
-		return "", "", err
-	}
-	if lr.SyncedLyrics != nil {
-		synced = *lr.SyncedLyrics
-	}
-	if lr.PlainLyrics != nil {
-		plain = *lr.PlainLyrics
+	synced, plain = mergeLyricResponses(lr, lrclibResp{})
+	if synced == "" {
+		// Exact match is plain-only: retry bare before settling.
+		q2 := url.Values{}
+		q2.Set("artist_name", artist)
+		q2.Set("track_name", title)
+		if lr2, _, err := get(q2); err == nil {
+			synced, plain = mergeLyricResponses(lr, lr2)
+		}
 	}
 	if synced == "" && plain == "" {
-		return "", "", fmt.Errorf("no lyrics")
+		return "", "", true, fmt.Errorf("no lyrics")
 	}
-	return synced, plain, nil
+	return synced, plain, false, nil
+}
+
+// mergeLyricResponses prefers synced lines wherever found across
+// the exact and bare matches; plain fills from either. Pure for
+// testing the retry decision without network.
+func mergeLyricResponses(exact, bare lrclibResp) (synced, plain string) {
+	if exact.SyncedLyrics != nil {
+		synced = *exact.SyncedLyrics
+	}
+	if exact.PlainLyrics != nil {
+		plain = *exact.PlainLyrics
+	}
+	if synced == "" && bare.SyncedLyrics != nil {
+		synced = *bare.SyncedLyrics
+	}
+	if plain == "" && bare.PlainLyrics != nil {
+		plain = *bare.PlainLyrics
+	}
+	return synced, plain
 }
 
 // lyricMsg carries an async fetch result. Stale arrivals (track
@@ -382,10 +425,10 @@ type lyricMsg struct {
 
 func fetchLyricsCmd(file, artist, title, album string, duration int) tea.Cmd {
 	return func() tea.Msg {
-		synced, plain, err := fetchLyrics(artist, title, album, duration)
+		synced, plain, notFound, err := fetchLyrics(artist, title, album, duration)
 		if err == nil {
 			lyricStore(artist, title, album, lyricCache{Found: true, Synced: synced, Plain: plain})
-		} else {
+		} else if notFound {
 			lyricStore(artist, title, album, lyricCache{Found: false})
 		}
 		return lyricMsg{file, synced, plain, err}

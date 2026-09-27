@@ -303,3 +303,161 @@ func TestNoTrailingBG(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeLyricResponses(t *testing.T) {
+	str := func(s string) *string { return &s }
+	// exact synced wins outright
+	s, p := mergeLyricResponses(lrclibResp{SyncedLyrics: str("s1"), PlainLyrics: str("p1")}, lrclibResp{SyncedLyrics: str("s2")})
+	if s != "s1" || p != "p1" {
+		t.Fatalf("exact must win: %q %q", s, p)
+	}
+	// plain-only exact + synced bare = the Khaseka case
+	s, p = mergeLyricResponses(lrclibResp{PlainLyrics: str("p1")}, lrclibResp{SyncedLyrics: str("s2"), PlainLyrics: str("p2")})
+	if s != "s2" || p != "p1" {
+		t.Fatalf("bare synced must upgrade: %q %q", s, p)
+	}
+	// both empty stays empty (caller tombstones)
+	s, p = mergeLyricResponses(lrclibResp{}, lrclibResp{})
+	if s != "" || p != "" {
+		t.Fatalf("empty must stay empty")
+	}
+}
+
+func TestFullViewNoTrailingBG(t *testing.T) {
+	// Closes the audit-vs-real gap: the isolated-row audit can't
+	// see join padding, painter flush, or frame assembly. This one
+	// scans full-View rows (Devanagari synced lyrics live) and
+	// asserts no bg survives past the last visible glyph — except
+	// the sounding-line pill, which is full-width by design.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	buildBaseStyles()
+	os.Setenv("HOME", "/home/miz")
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.tracks, m.view = tracks, tracks
+	m.indexing = false
+	m.width, m.height = 167, 39
+	m.layoutPanes()
+	var k *Track
+	for i := range tracks {
+		if tracks[i].Title == "Khaseka Tara" {
+			k = &tracks[i]
+		}
+	}
+	m.status = Status{State: "playing", File: k.Path, Artist: k.Artist, Title: k.Title, Album: k.Album, Duration: 301, Position: 74}
+	m.loadArt(k.Path)
+	m.followPlaying(k.Path)
+	m.loadLyrics(k.Path)
+	m.syncDetail()
+	m.clampCursor()
+	curText := ""
+	if m.lyrSynced {
+		if cur := currentLyric(m.lyrLines, 74); cur >= 0 {
+			curText = m.lyrLines[cur].text
+		}
+	}
+	for i, ln := range strings.Split(m.View(), "\n") {
+		if curText != "" && strings.Contains(stripANSI(ln), curText) {
+			continue // the pill owns its full width by design
+		}
+		type cell struct {
+			ch rune
+			bg bool
+		}
+		var cells []cell
+		bg := false
+		rs := []rune(ln)
+		for j := 0; j < len(rs); {
+			if rs[j] == '\x1b' && j+1 < len(rs) && rs[j+1] == '[' {
+				e := j + 2
+				for e < len(rs) && !(rs[e] >= '@' && rs[e] <= '~') {
+					e++
+				}
+				if e < len(rs) {
+					e++
+				}
+				if strings.HasSuffix(string(rs[j:e]), "m") {
+					bg = sgrBg(string(rs[j:e]), bg)
+				}
+				j = e
+				continue
+			}
+			cells = append(cells, cell{rs[j], bg})
+			j++
+		}
+		last := -1
+		for k2, c := range cells {
+			if c.ch != ' ' {
+				last = k2
+			}
+		}
+		for k2 := last + 1; k2 < len(cells); k2++ {
+			if cells[k2].bg {
+				t.Fatalf("row %d: bg past last glyph", i)
+			}
+		}
+	}
+}
+
+func TestNoUnpaintedCells(t *testing.T) {
+	// Inverse of the trailing-bg audit: with the backdrop grid
+	// active, EVERY cell must carry a background. Simulates the
+	// terminal: 48-colors set state, resets (0/empty/49) clear it.
+	// This is the test that would have caught the dedup hole —
+	// trailing resets left padding unpainted in real terminals
+	// while the Ascii-profile screenshots looked perfect.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	buildBaseStyles()
+	os.Setenv("HOME", "/home/miz")
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.tracks, m.view = tracks, tracks
+	m.indexing = false
+	m.width, m.height = 167, 39
+	m.layoutPanes()
+	var k *Track
+	for i := range tracks {
+		if tracks[i].Title == "Khaseka Tara" {
+			k = &tracks[i]
+		}
+	}
+	m.status = Status{State: "playing", File: k.Path, Artist: k.Artist, Title: k.Title, Album: k.Album, Duration: 301, Position: 74}
+	m.loadArt(k.Path)
+	m.followPlaying(k.Path)
+	m.loadLyrics(k.Path)
+	m.syncDetail()
+	m.clampCursor()
+	if len(m.bgGrid) == 0 {
+		t.Fatalf("no backdrop grid")
+	}
+	for i, ln := range strings.Split(m.View(), "\n") {
+		bg := false
+		rs := []rune(ln)
+		for j := 0; j < len(rs); {
+			if rs[j] == '\x1b' && j+1 < len(rs) && rs[j+1] == '[' {
+				e := j + 2
+				for e < len(rs) && !(rs[e] >= '@' && rs[e] <= '~') {
+					e++
+				}
+				if e < len(rs) {
+					e++
+				}
+				bg = sgrBg(string(rs[j:e]), bg)
+				j = e
+				continue
+			}
+			if !bg {
+				t.Fatalf("row %d: unpainted cell %q", i, string(rs[j]))
+			}
+			j++
+		}
+	}
+}

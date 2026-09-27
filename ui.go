@@ -1845,6 +1845,76 @@ func (m *model) syncBgGrid() {
 	m.bgGrid, m.bgGridW, m.bgGridH = grid, W, H
 }
 
+// escTermBG folds escape text into terminal background state:
+// the last 48-color wins, any reset (empty SGR, 0, 49) clears to
+// "". Anything unrecognized also clears — re-emitting grid bg
+// costs bytes, missing it costs visible holes.
+func escTermBG(s, cur string) string {
+	for {
+		i := strings.Index(s, "\x1b[")
+		if i < 0 {
+			break
+		}
+		s = s[i+2:]
+		j := 0
+		for j < len(s) && !(s[j] >= '@' && s[j] <= '~') {
+			j++
+		}
+		if j >= len(s) {
+			cur = ""
+			break
+		}
+		seq := s[:j+1]
+		s = s[j+1:]
+		if !strings.HasSuffix(seq, "m") {
+			cur = ""
+			continue
+		}
+		inner := seq[:len(seq)-1]
+		if inner == "" {
+			cur = ""
+			continue
+		}
+		parts := strings.Split(inner, ";")
+		reset := false
+		setVal := ""
+		for k := 0; k < len(parts); k++ {
+			switch parts[k] {
+			case "0":
+				reset = true
+			case "38", "48":
+				isBG := parts[k] == "48"
+				if k+1 < len(parts) && parts[k+1] == "2" {
+					if k+4 < len(parts) {
+						if isBG {
+							setVal = "\x1b[" + strings.Join(parts[k:k+5], ";") + "m"
+						}
+						k += 4
+					}
+				} else if k+1 < len(parts) && parts[k+1] == "5" {
+					if k+2 < len(parts) {
+						if isBG {
+							setVal = "\x1b[" + strings.Join(parts[k:k+3], ";") + "m"
+						}
+						k += 2
+					}
+				} else if isBG {
+					setVal = ""
+					reset = true
+				}
+			case "49":
+				reset = true
+			}
+		}
+		if reset {
+			cur = ""
+		} else if setVal != "" {
+			cur = setVal
+		}
+	}
+	return cur
+}
+
 // glowFloor lifts sub-floor cells toward the track color so the
 // atmosphere reaches every corner: below floorLum reads as an
 // unpainted hole, not mood. Cells already above the floor pass
@@ -1877,14 +1947,25 @@ func (m model) paintFullBleed(content string) string {
 	}
 	W := m.bgGridW
 	var b strings.Builder
-	cell := 0    // absolute cell index into the grid
-	lastBG := "" // exact-match dedup: flat regions share one escape
+	cell := 0 // absolute cell index into the grid
+	// termBG is the background the terminal provably shows right
+	// now. The grid dedup may only skip re-emit while the terminal
+	// still holds that exact value — and ANY reset (0/empty SGR,
+	// 49) in the passthrough stream clears it, including the
+	// trailing resets lipgloss emits after every styled span in
+	// truecolor. Assuming otherwise leaves unpainted holes after
+	// every heading, pill, and lyric row. Unknown sequences reset
+	// to "" (force re-emit: extra bytes, never holes).
+	termBG := ""
+	noteEsc := func(s string) {
+		termBG = escTermBG(s, termBG)
+	}
 	flushLine := func(cells int) {
 		for cells < W {
 			if cell < len(m.bgGrid) {
-				if gb := m.bgGrid[cell]; gb != lastBG {
+				if gb := m.bgGrid[cell]; gb != termBG {
 					b.WriteString(gb)
-					lastBG = gb
+					termBG = gb
 				}
 			}
 			b.WriteString(" ")
@@ -1920,16 +2001,20 @@ func (m model) paintFullBleed(content string) string {
 			// marks here pads phantom spaces AND desyncs the grid
 			// for every line below.
 			w := lyricCellWidth(r)
-			if !bgOn && cell < len(m.bgGrid) {
-				if gb := m.bgGrid[cell]; gb != lastBG {
-					b.WriteString(gb)
-					lastBG = gb
-				}
-			} else if bgOn {
-				lastBG = ""
-			}
+			// Escapes first, grid decision after: a reset in
+			// the buffer (every styled span trails one) clears
+			// the terminal, so emitting grid BEFORE writing it
+			// paints a cell the reset immediately kills. Decide
+			// against post-escape state, never pre-escape.
+			noteEsc(esc.String())
 			b.WriteString(esc.String())
 			esc.Reset()
+			if !bgOn && cell < len(m.bgGrid) {
+				if gb := m.bgGrid[cell]; gb != termBG {
+					b.WriteString(gb)
+					termBG = gb
+				}
+			}
 			b.WriteRune(r)
 			cell++
 			if w > 1 {
@@ -1938,11 +2023,8 @@ func (m model) paintFullBleed(content string) string {
 			cells += w
 			i++
 		}
+		noteEsc(esc.String())
 		b.WriteString(esc.String())
-		// Line boundary clears the dedup memory: trailing resets
-		// (every styled line ends with one) leave the terminal
-		// without a background, so the next bare cell must re-emit.
-		lastBG = ""
 		flushLine(cells)
 		b.WriteString("\n")
 	}
