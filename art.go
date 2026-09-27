@@ -398,6 +398,53 @@ func scrimToward(img *image.RGBA, baseHex string, opacity float64) *image.RGBA {
 	return out
 }
 
+// smallBlur downsamples to backdrop size first, then blurs: 16x
+// cheaper than full-size blurCached, visually identical for
+// background duty.
+func smallBlur(img image.Image) *image.RGBA {
+	sb := img.Bounds()
+	w := 96
+	h := sb.Dy() * w / max(1, sb.Dx())
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), img, sb, draw.Over, nil)
+	out := dst
+	for i := 0; i < 3; i++ {
+		out = boxBlurPass(out, 8)
+	}
+	return out
+}
+
+// scrimAdaptive blends toward base with per-pixel strength keyed off
+// the pixel's own luminance: dark regions keep real art presence
+// (45%), bright regions collapse near the base (5%) so text clears.
+// Linear scrimToward can't do both at once — bright covers forced it
+// to choose, and text lost. opacity(lum) = clamp(0.45-0.40*lum).
+func scrimAdaptive(img *image.RGBA, baseHex string) *image.RGBA {
+	var br, bg, bb int
+	fmt.Sscanf(baseHex, "#%02x%02x%02x", &br, &bg, &bb)
+	b := img.Bounds()
+	out := image.NewRGBA(b)
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			cr, cg, cb, _ := img.RGBAAt(x, y).RGBA()
+			fr, fg, fb := float64(cr>>8)/255, float64(cg>>8)/255, float64(cb>>8)/255
+			lum := 0.2126*fr + 0.7152*fg + 0.0722*fb
+			o := 0.45 - 0.40*lum
+			if o < 0.05 {
+				o = 0.05
+			}
+			if o > 0.6 {
+				o = 0.6
+			}
+			r := int(fr*255*o + float64(br)*(1-o))
+			g := int(fg*255*o + float64(bg)*(1-o))
+			bl := int(fb*255*o + float64(bb)*(1-o))
+			out.SetRGBA(x, y, color.RGBA{uint8(r), uint8(g), uint8(bl), 255})
+		}
+	}
+	return out
+}
+
 // contrastRatio returns the WCAG relative-luminance ratio of two
 // #rrggbb colors (1..21).
 func contrastRatio(fgHex, bgHex string) float64 {
