@@ -62,6 +62,16 @@ type Keys struct {
 type Config struct {
 	Theme Theme `toml:"theme"`
 	Keys  Keys  `toml:"keys"`
+	// Pulse drives the outer frame's bass breathing. On by default;
+	// set pulse = false to disable (escape hatch for anyone who
+	// finds pulsing uncomfortable). Pointer so absent means on.
+	Pulse *bool `toml:"pulse"`
+}
+
+// pulseOn reports whether the frame pulse is enabled: default on,
+// explicitly false only.
+func (c Config) pulseOn() bool {
+	return c.Pulse == nil || *c.Pulse
 }
 
 // mochaTheme is the DEFAULT house palette: brass & verdigris on warm

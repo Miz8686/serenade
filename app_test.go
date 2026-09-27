@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -622,5 +623,130 @@ func TestBrandCeiling(t *testing.T) {
 	}
 	if strings.Contains(bar, "253;0;42") {
 		t.Fatalf("track red leaked into the progress bar")
+	}
+}
+
+func TestPaintFullBleed(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 20, 6 // content 18x4
+	// synthetic grid: every cell bg-escaped
+	grid := make([]string, 18*4)
+	for i := range grid {
+		grid[i] = "\x1b[48;2;10;10;10m"
+	}
+	m.bgGrid, m.bgGridW, m.bgGridH = grid, 18, 4
+	// bare cells take art bg; explicit-bg cells keep theirs
+	out := m.paintFullBleed("ab\n\x1b[48;2;200;0;0mcd")
+	rows := splitLines(out)
+	if len(rows) != 2 {
+		t.Fatalf("row count changed: %d", len(rows))
+	}
+	if !strings.Contains(rows[0], "\x1b[48;2;10;10;10ma") {
+		t.Fatalf("bare cell missed backdrop: %q", rows[0])
+	}
+	if strings.Contains(rows[1], "\x1b[48;2;10;10;10m\x1b[48;2;200;0;0mc") {
+		t.Fatalf("explicit bg must not be overpainted: %q", rows[1])
+	}
+	if !strings.Contains(rows[1], "\x1b[48;2;200;0;0mc") {
+		t.Fatalf("explicit bg lost: %q", rows[1])
+	}
+	// short lines pad out to full width with backdrop
+	if got := countCells(rows[0]); got != 18 {
+		t.Fatalf("row padded to %d cells, want 18", got)
+	}
+	// no grid, no-op
+	m.bgGrid = nil
+	if got := m.paintFullBleed("ab"); got != "ab" {
+		t.Fatalf("passthrough broken: %q", got)
+	}
+}
+
+func splitLines(s string) []string { return strings.Split(s, "\n") }
+
+func countCells(line string) int {
+	n := 0
+	inEsc := false
+	for _, r := range line {
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		n += runewidth.RuneWidth(r)
+	}
+	return n
+}
+
+func TestBassAndPulse(t *testing.T) {
+	if got := bassLevel(nil); got != 0 {
+		t.Fatalf("empty levels: %f", got)
+	}
+	if got := bassLevel([]float64{0.9, 0.8, 0.7, 0.1}); got < 0.79 || got > 0.81 {
+		t.Fatalf("kick mean wrong: %f", got)
+	}
+	// high bands must not move the needle
+	if got := bassLevel([]float64{0.0, 0.0, 0.0, 1.0, 1.0}); got != 0 {
+		t.Fatalf("treble leaked into bass: %f", got)
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	// resting: idle loop and disabled config both read base
+	m.vizActive = false
+	m.bass = 0.9
+	if got := string(m.frameColor()); got != string(colMuted) {
+		t.Fatalf("idle frame must rest at identity, got %s", got)
+	}
+	m.vizActive = true
+	off := false
+	m.cfg.Pulse = &off
+	if got := string(m.frameColor()); got != string(colMuted) {
+		t.Fatalf("disabled pulse must rest at identity, got %s", got)
+	}
+	m.cfg.Pulse = nil // default on
+	m.bass = 1.0
+	lit := string(m.frameColor())
+	if lit == string(colMuted) {
+		t.Fatalf("full bass left the frame unchanged")
+	}
+	// subtlety: each channel within 25% of base
+	var r0, g0, b0, r1, g1, b1 int
+	fmt.Sscanf(string(colMuted), "#%02x%02x%02x", &r0, &g0, &b0)
+	fmt.Sscanf(lit, "#%02x%02x%02x", &r1, &g1, &b1)
+	for i, pair := range [][2]int{{r0, r1}, {g0, g1}, {b0, b1}} {
+		if float64(pair[1])/float64(pair[0]) > 1.25 {
+			t.Fatalf("channel %d pulse %d exceeds subtle ceiling over %d", i, pair[1], pair[0])
+		}
+	}
+	// default config pulses
+	if !defaultConfig().pulseOn() {
+		t.Fatalf("pulse must default on")
+	}
+}
+
+func TestFullBleedViewPerf(t *testing.T) {
+	os.Setenv("HOME", "/home/miz")
+	tracks, err := indexLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.tracks, m.view = tracks, tracks
+	m.indexing = false
+	m.width, m.height = 167, 39
+	m.layoutPanes()
+	m.status = Status{State: "playing", File: tracks[40].Path}
+	m.loadArt(tracks[40].Path)
+	if len(m.bgGrid) == 0 {
+		t.Fatalf("no backdrop grid for art track")
+	}
+	start := time.Now()
+	_ = m.View()
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("full-bleed View took %v", d)
 	}
 }

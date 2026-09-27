@@ -99,6 +99,15 @@ type model struct {
 	flashZones []btnZone
 	// Track-start reveal: fixed-frame art wipe, then it stops.
 	reveal int
+	// Full-bleed backdrop: per-cell bg escapes for the content area,
+	// rebuilt on track/size change. Cells WITH an explicit background
+	// (selection, art panel, frame edge) keep it; everything else
+	// takes the art.
+	bgGrid  []string
+	bgGridW int
+	bgGridH int
+	// bass is the smoothed low-band level driving the frame pulse.
+	bass float64
 	// Phase-3 visualizer state.
 	tap       *vizTap
 	levels    []float64
@@ -325,6 +334,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.reveal = 0
 		m.layoutPanes()
+		m.syncBgGrid()
 		if m.artImg != nil {
 			m.artBlock = m.renderArt()
 		} else if m.artFile != "" || m.status.File != "" {
@@ -444,6 +454,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.peaks[i] *= vizDecay
 				}
+			}
+			// Kick-range smoother for the frame pulse: fast attack
+			// so beats land, slow release so it breathes, not strobes.
+			if inst := bassLevel(m.levels); inst > m.bass {
+				m.bass = 0.4*inst + 0.6*m.bass
+			} else {
+				m.bass = 0.92*m.bass + 0.08*inst
 			}
 		}
 		return m, m.vizTick()
@@ -1400,6 +1417,7 @@ func (m *model) loadArt(path string) {
 		m.artPrim, m.artSec = "", ""
 		m.applyAccent("", "")
 		m.artBlock = m.emptyArt()
+		m.syncBgGrid()
 		return
 	}
 	m.artImg = img
@@ -1412,6 +1430,7 @@ func (m *model) loadArt(path string) {
 		m.bgImg = nil
 		m.artBlock = m.renderArt()
 	}
+	m.syncBgGrid()
 }
 
 func (m model) emptyArt() string {
@@ -1706,6 +1725,143 @@ func (m model) statusLine() (string, []btnZone) {
 	return b.String(), zones
 }
 
+// fullBgFor builds the track's backdrop: blurred + adaptively
+// scrimmed, at backdrop size. Cheap (smallBlur) — rebuilt per track,
+// no disk cache.
+func fullBgFor(path string) *image.RGBA {
+	img, _, _, err := cachedArt(path)
+	if err != nil || img == nil {
+		return nil
+	}
+	return scrimAdaptive(smallBlur(toRGBA(img)), themeBase.Bg)
+}
+
+// syncBgGrid re-memos the per-cell backdrop escapes for the current
+// content size. No art, no grid — the ink shows through instead.
+func (m *model) syncBgGrid() {
+	m.bgGrid = nil
+	bg := fullBgFor(m.artFile)
+	if bg == nil {
+		return
+	}
+	W, H := m.width-2, m.height-2
+	if W < 1 || H < 1 {
+		return
+	}
+	sb := bg.Bounds()
+	grid := make([]string, 0, W*H)
+	for y := 0; y < H; y++ {
+		sy := sb.Min.Y + y*sb.Dy()/H
+		for x := 0; x < W; x++ {
+			sx := sb.Min.X + x*sb.Dx()/W
+			br, bgg, bb, _ := bg.RGBAAt(sx, sy).RGBA()
+			grid = append(grid, fmt.Sprintf("\x1b[48;2;%d;%d;%dm", br>>8, bgg>>8, bb>>8))
+		}
+	}
+	m.bgGrid, m.bgGridW, m.bgGridH = grid, W, H
+}
+
+// paintFullBleed replays content cells over the backdrop grid. Only
+// the background channel is touched: every original escape (fg,
+// bold, explicit bgs) is preserved byte for byte, and cells already
+// carrying a background keep it. Short lines pad out with backdrop.
+func (m model) paintFullBleed(content string) string {
+	if len(m.bgGrid) == 0 || m.bgGridW < 1 {
+		return content
+	}
+	W := m.bgGridW
+	var b strings.Builder
+	cell := 0 // absolute cell index into the grid
+	flushLine := func(cells int) {
+		for cells < W {
+			if cell < len(m.bgGrid) {
+				b.WriteString(m.bgGrid[cell])
+			}
+			b.WriteString(" ")
+			cell++
+			cells++
+		}
+	}
+	for _, line := range strings.Split(content, "\n") {
+		cells := 0
+		bgOn := false
+		var esc strings.Builder // escapes since last cell
+		i := 0
+		runes := []rune(line)
+		for i < len(runes) {
+			r := runes[i]
+			if r == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+				j := i + 2
+				for j < len(runes) && !(runes[j] >= '@' && runes[j] <= '~') {
+					j++
+				}
+				if j < len(runes) {
+					j++
+				}
+				seq := string(runes[i:j])
+				esc.WriteString(seq)
+				if strings.HasSuffix(seq, "m") {
+					bgOn = sgrBg(seq, bgOn)
+				}
+				i = j
+				continue
+			}
+			w := runewidth.RuneWidth(r)
+			if !bgOn && cell < len(m.bgGrid) {
+				b.WriteString(m.bgGrid[cell])
+			}
+			b.WriteString(esc.String())
+			esc.Reset()
+			b.WriteRune(r)
+			cell++
+			if w > 1 {
+				cell += w - 1
+			}
+			cells += w
+			i++
+		}
+		b.WriteString(esc.String())
+		flushLine(cells)
+		b.WriteString("\n")
+	}
+	out := b.String()
+	// content had no trailing newline; don't add one.
+	return strings.TrimSuffix(out, "\n")
+}
+
+// sgrBg tracks background state through an SGR sequence: 48;2/48;5
+// turns it on, 49 and 0/empty reset turn it off. Extended-color
+// params are consumed by count, so a channel value of "0" can never
+// read as a reset (that exact bug overpainted explicit backgrounds).
+func sgrBg(seq string, on bool) bool {
+	inner := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), "m")
+	if inner == "" {
+		return false
+	}
+	parts := strings.Split(inner, ";")
+	for i := 0; i < len(parts); i++ {
+		switch parts[i] {
+		case "0":
+			return false
+		case "38", "48":
+			isBG := parts[i] == "48"
+			if i+1 < len(parts) && parts[i+1] == "2" {
+				i += 4
+			} else if i+1 < len(parts) && parts[i+1] == "5" {
+				i += 2
+			} else {
+				continue
+			}
+			if isBG {
+				on = true
+			}
+		case "49":
+			on = false
+		}
+	}
+	return on
+}
+
 func (m model) View() string {
 	if m.showHelp {
 		return m.helpView()
@@ -1831,7 +1987,61 @@ func (m model) View() string {
 	statusText = lipgloss.NewStyle().Width(contentW).Render(statusText)
 	hrule := styleDivider.Render(strings.Repeat("\u2500", contentW))
 	content := lipgloss.JoinVertical(lipgloss.Left, top, hrule, barLine, statusText)
-	return styleOuterFrame.Width(contentW).Render(content)
+	if len(m.bgGrid) > 0 {
+		content = m.paintFullBleed(content)
+	}
+	return m.frameStyle().Width(contentW).Render(content)
+}
+
+// frameStyle builds the outer edge per render: solid instrument
+// border, optionally breathing with bass energy (see pulseLevel).
+func (m model) frameStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.ThickBorder()).
+		BorderForeground(m.frameColor()).Background(colBG)
+}
+
+// frameColor is the resting muted edge, or the bass-pulsed edge
+// while music plays. Pulse disabled (config) or inactive loop
+// always rest at identity — no stale glow.
+func (m model) frameColor() lipgloss.Color {
+	b := m.pulseLevel()
+	if b <= 0 {
+		return colMuted
+	}
+	var r, g, bl int
+	fmt.Sscanf(string(colMuted), "#%02x%02x%02x", &r, &g, &bl)
+	f := 1 + 0.22*b
+	sc := func(v int) int { return min(255, int(float64(v)*f)) }
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", sc(r), sc(g), sc(bl)))
+}
+
+// pulseLevel is the smoothed bass energy in [0,1], or 0 when the
+// pulse is disabled or the loop is off.
+func (m model) pulseLevel() float64 {
+	if !m.cfg.pulseOn() || !m.vizActive {
+		return 0
+	}
+	if m.bass < 0 {
+		return 0
+	}
+	if m.bass > 1 {
+		return 1
+	}
+	return m.bass
+}
+
+// bassLevel reads kick-range energy (first three log bands,
+// ~60–100Hz) from a live levels frame.
+func bassLevel(levels []float64) float64 {
+	n := min(3, len(levels))
+	if n == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, l := range levels[:n] {
+		sum += l
+	}
+	return sum / float64(n)
 }
 
 func min(a, b int) int {
