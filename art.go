@@ -36,7 +36,7 @@ const artCacheMaxW = 384
 // artCacheVer versions cache filenames: bump on any size/pipeline
 // change so stale files miss and rebuild instead of pinning the old
 // resolution forever. Legacy unversioned files are removed on miss.
-const artCacheVer = "v2"
+const artCacheVer = "v3"
 
 func artDir() string {
 	home, _ := os.UserHomeDir()
@@ -172,8 +172,14 @@ func bgTint(hex string) string {
 // to theme tokens.
 func accentPair(img image.Image) (string, string) {
 	const buckets = 36
+	// grayFloor gates the Mocha fallback on OVERALL saturation, not
+	// bucket dominance: busy multicolor art splits votes so no bucket
+	// clears the score floor, but it should still theme off its
+	// largest bucket. Only genuinely grayscale art falls back.
+	const grayFloor = 0.15
 	var sumS, sumV, sumR, sumG, sumB [buckets]float64
 	var cnt [buckets]int
+	var totS float64
 	b := img.Bounds()
 	step := max(1, (b.Dx()*b.Dy())/900)
 	n := 0
@@ -181,6 +187,7 @@ func accentPair(img image.Image) (string, string) {
 		for x := b.Min.X; x < b.Max.X; x += step {
 			r, g, bl, _ := img.At(x, y).RGBA()
 			hh, ss, vv := rgbToHsv(float64(r>>8)/255, float64(g>>8)/255, float64(bl>>8)/255)
+			totS += ss
 			bi := int(hh * buckets)
 			if bi >= buckets {
 				bi = buckets - 1
@@ -212,6 +219,7 @@ func accentPair(img image.Image) (string, string) {
 	if len(ranked) == 0 {
 		return "", ""
 	}
+	meanS := totS / float64(max(1, n))
 	best, second := 0, -1
 	for i := 1; i < len(ranked); i++ {
 		if ranked[i].score > ranked[best].score {
@@ -221,7 +229,7 @@ func accentPair(img image.Image) (string, string) {
 		}
 	}
 	mk := func(s scored) string {
-		if s.score < 0.04 {
+		if s.score < 0.04 && meanS < grayFloor {
 			return ""
 		}
 		v := maxF(s.v, 0.55)

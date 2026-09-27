@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -246,5 +247,50 @@ func TestBgTintBand(t *testing.T) {
 		if ratio := contrastRatio("#CDD6F4", got); ratio < 4.5 {
 			t.Fatalf("bgTint(%s) = %s contrast %.2f below 4.5", in, got, ratio)
 		}
+	}
+}
+
+// stripeImage builds a hue-diverse image: nHues vertical stripes at
+// fixed saturation/value. Models busy multicolor art (e.g. neon on
+// dark) where no single hue bucket holds a majority.
+func stripeImage(w, h, nHues int, sat, val float64) image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			hue := float64(x*nHues/w) / float64(nHues)
+			r, g, b := hsvToRgb(hue, sat, val)
+			img.SetRGBA(x, y, color.RGBA{uint8(r * 255), uint8(g * 255), uint8(b * 255), 255})
+		}
+	}
+	return img
+}
+
+func TestAccentPairMulticolorThemes(t *testing.T) {
+	// 12 dark saturated hues: every bucket scores below the 0.04
+	// dominance floor, but overall art is colorful (mean S = 0.6).
+	prim, _ := accentPair(stripeImage(144, 144, 12, 0.6, 0.35))
+	if prim == "" {
+		t.Fatalf("multicolor art fell back to Mocha instead of theming")
+	}
+}
+
+func TestAccentPairMutedMulticolorStillFallsBack(t *testing.T) {
+	// Same hue diversity, genuinely desaturated: fallback is correct.
+	prim, sec := accentPair(stripeImage(144, 144, 12, 0.05, 0.35))
+	if prim != "" || sec != "" {
+		t.Fatalf("muted art should fall back, got %q %q", prim, sec)
+	}
+}
+
+func TestAccentPair1800Themes(t *testing.T) {
+	// Reference case: bbno$ & Ironmouse – 1-800. Dark, hue-diverse,
+	// moderately saturated art that fell back before the trigger fix.
+	os.Setenv("HOME", "/home/miz")
+	img, prim, _, err := cachedArt("/home/miz/FLAC/01 - bbno$ & Ironmouse - 1-800.flac")
+	if err != nil || img == nil {
+		t.Skipf("reference art unavailable: %v", err)
+	}
+	if prim == "" {
+		t.Fatalf("1-800 art fell back instead of theming")
 	}
 }
