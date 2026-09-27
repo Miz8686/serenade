@@ -43,6 +43,7 @@ var (
 	styleHL         = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted      = lipgloss.NewStyle().Foreground(colMuted)
 	styleTitle      = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleArtist     = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
 	styleError      = lipgloss.NewStyle().Foreground(colError)
 )
 
@@ -135,6 +136,7 @@ func buildBaseStyles() {
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleMuted = lipgloss.NewStyle().Foreground(colMuted)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleArtist = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
 	styleError = lipgloss.NewStyle().Foreground(colError)
 }
 
@@ -204,6 +206,85 @@ func (m *model) clampCursor() {
 	if m.cursor >= m.offset+vis {
 		m.offset = m.cursor - vis + 1
 	}
+	// Headings and gaps consume screen rows: keep shifting the
+	// track-offset anchor until the cursor's own screen row fits.
+	for m.screenSpan(m.offset, m.cursor) > vis && m.offset < m.cursor {
+		m.offset++
+	}
+}
+
+// list line kinds: track rows plus liner-notes chrome.
+const (
+	llTrack = iota
+	llArtist
+	llGap
+)
+
+type listLine struct {
+	kind int
+	idx  int // view index for llTrack/llArtist
+}
+
+func artistKey(a string) string { return strings.ToLower(a) }
+
+// screenSpan counts emitted screen rows from track a through track b
+// inclusive (headings + gaps + tracks). Must match listWindow exactly
+// or the cursor can slide under the fold.
+func (m model) screenSpan(a, b int) int {
+	if m.searching || a > b {
+		return max(0, b-a+1)
+	}
+	n, prevA, first := 0, "", true
+	for i := a; i <= b && i < len(m.view); i++ {
+		ak := artistKey(m.view[i].Artist)
+		if first || ak != prevA {
+			if !first {
+				n++
+			}
+			n++
+			prevA, first = ak, false
+		}
+		n++
+	}
+	return n
+}
+
+// listWindow builds the visible screen lines from the track offset:
+// artist headings with breathing room (liner notes), quiet title rows
+// beneath. Searching falls back to a flat fuzzy list so highlight
+// indexes keep aligning one row per track.
+func (m model) listWindow() []listLine {
+	vis := m.visibleRows()
+	var lines []listLine
+	if m.searching {
+		for i := m.offset; i < m.offset+vis && i < len(m.view); i++ {
+			lines = append(lines, listLine{llTrack, i})
+		}
+		return lines
+	}
+	prevA, first := "", true
+	for i := m.offset; i < len(m.view) && len(lines) < vis; i++ {
+		ak := artistKey(m.view[i].Artist)
+		if first || ak != prevA {
+			need := 2 // heading + its first track
+			if !first {
+				need = 3 // gap + heading + track
+			}
+			if len(lines)+need > vis {
+				break // never orphan a heading at the fold
+			}
+			if !first {
+				lines = append(lines, listLine{llGap, -1})
+			}
+			lines = append(lines, listLine{llArtist, i})
+			prevA, first = ak, false
+		}
+		if len(lines)+1 > vis {
+			break
+		}
+		lines = append(lines, listLine{llTrack, i})
+	}
+	return lines
 }
 
 // followPlaying jumps scroll offset AND cursor to the playing track's
@@ -901,8 +982,13 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && inList:
 		m.focus = focusList
 		m.layoutPanes()
-		row := m.offset + (msg.Y - (listTop + 2))
-		if row >= 0 && row < len(m.tracks) {
+		// Map the screen row through the liner-notes window:
+		// headings and gaps are not selectable, tracks resolve to
+		// their view index.
+		lines := m.listWindow()
+		sr := msg.Y - (listTop + 2)
+		if sr >= 0 && sr < len(lines) && lines[sr].kind == llTrack {
+			row := lines[sr].idx
 			now := time.Now()
 			if row == m.lastRow && now.Sub(m.lastClick) < 500*time.Millisecond {
 				m.cursor = row
@@ -1109,6 +1195,7 @@ func (m *model) applyAccent(prim, sec string) {
 	stylePlaying = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleHL = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
 	styleTitle = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
+	styleArtist = lipgloss.NewStyle().Foreground(colAccent2).Bold(true)
 	styleFocusedBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent).Background(colBG)
 	styleBlurBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colSurface).Background(colBG)
 	styleOuterFrame = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(colMuted).Background(colBG)
@@ -1508,33 +1595,48 @@ func (m model) View() string {
 	listW, rightW := m.listPaneW(), m.rightPaneW()
 	contentW := listW + 1 + rightW
 	topH := m.topH()
-	// Library list (current filter view, with fuzzy highlights).
+	// Library list as liner notes: artist headings carry the
+	// structure, quiet title rows sit beneath. (Searching renders a
+	// flat fuzzy list instead — see listWindow.)
 	var rows []string
 	vis := m.visibleRows()
 	playing := m.playingPath()
-	for i := m.offset; i < m.offset+vis && i < len(m.view); i++ {
-		t := m.view[i]
-		// One style per row, never nested: nested lipgloss spans emit
-		// mid-line resets that fracture the outer row style (verified:
-		// partial highlight blocks + gaps). Playing rows and the cursor
-		// row render plain labels under their own style; fuzzy spans
-		// only ever appear on otherwise-unstyled rows, and only while
-		// a search is active (viewHL is cleared with the query).
-		if t.Path == playing && playing != "" {
-			line := "▶ " + t.label()
-			if i == m.cursor {
-				rows = append(rows, styleSelected.Render(line))
-			} else {
-				rows = append(rows, stylePlaying.Render(line))
+	for _, ln := range m.listWindow() {
+		switch ln.kind {
+		case llGap:
+			rows = append(rows, "")
+		case llArtist:
+			a := m.view[ln.idx].Artist
+			if a == "" {
+				a = "—"
 			}
-			continue
-		}
-		if i == m.cursor {
-			rows = append(rows, styleSelected.Render("  "+t.label()))
-		} else if m.searching && i < len(m.viewHL) {
-			rows = append(rows, "  "+fuzzyLine(t.label(), m.viewHL[i]))
-		} else {
-			rows = append(rows, "  "+t.label())
+			rows = append(rows, styleArtist.Render(strings.ToUpper(a)))
+		default:
+			i := ln.idx
+			t := m.view[i]
+			// One style per row, never nested: nested lipgloss spans
+			// emit mid-line resets that fracture the outer row style
+			// (verified: partial highlight blocks + gaps). Playing
+			// rows and the cursor row render plain text under their
+			// own style; fuzzy spans only ever appear on otherwise-
+			// unstyled rows, and only while a search is active
+			// (viewHL is cleared with the query).
+			if t.Path == playing && playing != "" {
+				line := "▶ " + t.Title
+				if i == m.cursor {
+					rows = append(rows, styleSelected.Render(line))
+				} else {
+					rows = append(rows, stylePlaying.Render(line))
+				}
+				continue
+			}
+			if i == m.cursor {
+				rows = append(rows, styleSelected.Render("  "+t.Title))
+			} else if m.searching && i < len(m.viewHL) {
+				rows = append(rows, "  "+fuzzyLine(t.label(), m.viewHL[i]))
+			} else {
+				rows = append(rows, "  "+t.Title)
+			}
 		}
 	}
 	for len(rows) < vis {

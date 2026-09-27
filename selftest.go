@@ -114,18 +114,23 @@ func mouseCheck() string {
 		um, _ := m.handleMouse(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 		return um.(model)
 	}
-	// Rows start at Y=2 (border + title), X=1..98 is list interior.
+	// Rows start at Y=2 (frame + title); single-artist mock puts a
+	// heading at Y=2, tracks from Y=3. X=1..99 is list interior.
 	m := mk()
-	m = click(m, 5, 5) // row 3
-	if m.cursor != 3 {
-		return fmt.Sprintf("click row: cursor=%d, want 3", m.cursor)
+	m = click(m, 5, 2) // artist heading: not selectable
+	if m.cursor != 0 {
+		return fmt.Sprintf("heading click moved cursor to %d", m.cursor)
+	}
+	m = click(m, 5, 5) // screen row 3 -> track 2
+	if m.cursor != 2 {
+		return fmt.Sprintf("click row: cursor=%d, want 2", m.cursor)
 	}
 	if m.focus != focusList {
 		return "click did not steal focus to list"
 	}
 	// Double-click same row plays (backend dead -> beErr, must not panic).
 	m = click(m, 5, 5)
-	if m.cursor != 3 {
+	if m.cursor != 2 {
 		return fmt.Sprintf("double-click moved cursor to %d", m.cursor)
 	}
 	// Wheel inside list scrolls; wheel over detail must not touch cursor.

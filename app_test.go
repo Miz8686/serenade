@@ -408,3 +408,37 @@ func TestQueueViewRenders(t *testing.T) {
 		t.Fatalf("empty queue needs an empty state, got %q", out[:min(80, len(out))])
 	}
 }
+
+func TestListWindowGrouping(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{
+		{Path: "/a1", Artist: "Alpha", Title: "one"},
+		{Path: "/a2", Artist: "Alpha", Title: "two"},
+		{Path: "/b1", Artist: "Beta", Title: "one"},
+	}
+	m.view = m.tracks
+	m.cursor, m.offset = 0, 0
+	lines := m.listWindow()
+	want := []int{llArtist, llTrack, llTrack, llGap, llArtist, llTrack}
+	if len(lines) != len(want) {
+		t.Fatalf("window has %d lines, want %d", len(lines), len(want))
+	}
+	for i, k := range want {
+		if lines[i].kind != k {
+			t.Fatalf("line %d kind=%d want %d", i, lines[i].kind, k)
+		}
+	}
+	if got := m.screenSpan(0, 2); got != len(lines) {
+		t.Fatalf("screenSpan(0,2)=%d != window len %d", got, len(lines))
+	}
+	// Heading clicks are ignored; track clicks resolve view indexes.
+	um, _ := m.handleMouse(tea.MouseMsg{X: 5, Y: 2, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um.(model).cursor != 0 {
+		t.Fatalf("heading click moved cursor")
+	}
+	um, _ = m.handleMouse(tea.MouseMsg{X: 5, Y: 7, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um.(model).cursor != 2 {
+		t.Fatalf("post-gap click: cursor=%d want 2", um.(model).cursor)
+	}
+}
