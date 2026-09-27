@@ -190,3 +190,24 @@ func TestQueueBeatsShuffle(t *testing.T) {
 		t.Fatalf("queue drain must not consume bag position")
 	}
 }
+
+func TestIsNaturalEnd(t *testing.T) {
+	P := func(state, file string) Status { return Status{State: state, File: file} }
+	cases := []struct {
+		prev, cur Status
+		want      bool
+	}{
+		{P("playing", "/a"), P("stopped", "/a"), true},  // held file
+		{P("playing", "/a"), P("stopped", ""), true},    // cleared file
+		{P("playing", "/a"), P("stopped", "/b"), false}, // external action
+		{P("playing", "/a"), P("paused", "/a"), false},
+		{P("stopped", "/a"), P("stopped", "/a"), false},
+		{P("playing", ""), P("stopped", "/a"), false},
+		{P("playing", "/a"), P("playing", "/b"), false},
+	}
+	for _, c := range cases {
+		if got := isNaturalEnd(c.prev, c.cur); got != c.want {
+			t.Fatalf("isNaturalEnd(%v, %v) = %v, want %v", c.prev, c.cur, got, c.want)
+		}
+	}
+}

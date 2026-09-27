@@ -224,14 +224,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.beErr = msg.err.Error()
 		} else {
 			m.beErr = ""
-			// Natural track end: same file, was playing, now stopped.
-			// (A manual next() lands on a *different* file, so this
-			// cannot double-skip user input.)
-			if m.prev.State == "playing" && msg.st.State == "stopped" && m.prev.File != "" && msg.st.File == m.prev.File {
+			if isNaturalEnd(m.prev, msg.st) {
+				prevFile := m.prev.File
 				m.status = msg.st
 				m.prev = msg.st
 				m.syncDetail()
-				m.advance()
+				m.advance(prevFile)
 				if m.focused {
 					return m, tea.Batch(pollBackend(m.be), m.syncViz())
 				}
@@ -482,6 +480,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// isNaturalEnd reports a genuine track finish: was playing a known
+// file, now stopped, and the file either stayed put or was cleared
+// (cmus clears it when its library is empty; holds it otherwise).
+// A *different* file means external action — never advance. A manual
+// next() lands on a different file, so this cannot double-skip input.
+func isNaturalEnd(prev, cur Status) bool {
+	return prev.State == "playing" && prev.File != "" && cur.State == "stopped" &&
+		(cur.File == prev.File || cur.File == "")
+}
+
 // nextTrackPath returns the path after prevFile in library order,
 // wrapping to the first track. Pure (no backend) for testability.
 func nextTrackPath(tracks []Track, prevFile string) (string, bool) {
@@ -565,8 +573,8 @@ func pickNext(queue []string, tracks []Track, prevFile string, shuf *shuffleStat
 	return next, queue, ok
 }
 
-func (m *model) advance() {
-	next, rest, ok := pickNext(m.queue, m.tracks, m.prev.File, &m.shuf)
+func (m *model) advance(prevFile string) {
+	next, rest, ok := pickNext(m.queue, m.tracks, prevFile, &m.shuf)
 	if !ok {
 		return
 	}
@@ -578,6 +586,35 @@ func (m *model) advance() {
 
 // enqueueCursor appends the cursor's track (current filter view) to
 // the play queue.
+// reshuffleAndPlay is the shuffle BUTTON behavior (distinct from the
+// `s` key toggle): enable shuffle, generate a fresh full-library bag,
+// and immediately jump to and play its first track, interrupting
+// whatever is playing. Avoids starting on the current track so the
+// click has audible feedback.
+func (m *model) reshuffleAndPlay() {
+	if len(m.tracks) == 0 {
+		return
+	}
+	curIdx := -1
+	for i, t := range m.tracks {
+		if t.Path == m.status.File {
+			curIdx = i
+		}
+	}
+	m.shuf.on = true
+	m.shuf.order = freshBag(len(m.tracks), curIdx)
+	m.shuf.pos = 0
+	next, rest, ok := pickNext(m.queue, m.tracks, "", &m.shuf)
+	m.queue = rest
+	if !ok {
+		return
+	}
+	if err := m.be.playFile(next); err != nil {
+		m.beErr = err.Error()
+	}
+	m.syncDetail()
+}
+
 // toggleShuffle flips shuffle mode. Turning on while idle starts
 // playback immediately on a random track ("hit it and it just
 // works"); otherwise only future advances are affected. Turning off
@@ -650,7 +687,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				case "next":
 					_ = m.be.next()
 				case "shuffle":
-					m.toggleShuffle()
+					m.reshuffleAndPlay()
 				}
 				return m, tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
 					return flashMsg{}

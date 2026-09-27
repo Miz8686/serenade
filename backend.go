@@ -114,6 +114,7 @@ func ensureBackend() (*backend, error) {
 	for i := 0; i < 8; i++ {
 		time.Sleep(500 * time.Millisecond)
 		if b.alive() {
+			b.enforcePlaybackPolicy()
 			return b, nil
 		}
 	}
@@ -123,6 +124,7 @@ func ensureBackend() (*backend, error) {
 	for i := 0; i < 6; i++ {
 		time.Sleep(500 * time.Millisecond)
 		if b.alive() {
+			b.enforcePlaybackPolicy()
 			return b, nil
 		}
 	}
@@ -142,6 +144,18 @@ func (b *backend) cleanup() {
 	}
 	if b.sock != "" {
 		_ = os.Remove(b.sock)
+	}
+}
+
+// enforcePlaybackPolicy disables cmus's internal advancing so our
+// pickNext is the SOLE decider of what plays next. Verified failure
+// modes, all observed: repeat loops the playlist; continue walks it;
+// and with a populated library cmus jumps to lib.pl[0] at track end
+// (bypassing our same-file advance guard entirely). Backend keeps no
+// library (we index ourselves), so play_library goes too.
+func (b *backend) enforcePlaybackPolicy() {
+	for _, cmd := range []string{"set repeat=false", "set continue=false", "set shuffle=false", "set play_library=false"} {
+		_, _ = b.runRemote("-C", cmd)
 	}
 }
 
@@ -203,7 +217,10 @@ func baseName(p string) string {
 }
 
 // Playback verbs. Errors are returned for the UI to surface.
-func (b *backend) playFile(path string) error { _, err := b.runRemote("-f", path); return err }
+func (b *backend) playFile(path string) error {
+	_, err := b.runRemote("-f", path)
+	return err
+}
 func (b *backend) toggle() error {
 	_, err := b.runRemote("-C", "player-pause")
 	return err
