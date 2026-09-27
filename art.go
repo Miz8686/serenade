@@ -400,16 +400,17 @@ func scrimToward(img *image.RGBA, baseHex string, opacity float64) *image.RGBA {
 
 // smallBlur downsamples to backdrop size first, then blurs: 16x
 // cheaper than full-size blurCached, visually identical for
-// background duty.
+// background duty. Sized for atmosphere, not detail — the backdrop
+// must never resolve into blocky tiles that compete with content.
 func smallBlur(img image.Image) *image.RGBA {
 	sb := img.Bounds()
-	w := 96
+	w := 64
 	h := sb.Dy() * w / max(1, sb.Dx())
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), img, sb, draw.Over, nil)
 	out := dst
-	for i := 0; i < 3; i++ {
-		out = boxBlurPass(out, 8)
+	for i := 0; i < 5; i++ {
+		out = boxBlurPass(out, 16)
 	}
 	return out
 }

@@ -1590,12 +1590,11 @@ func (m *model) detailText() string {
 		if artist == "" {
 			artist = "—"
 		}
-		fmt.Fprintf(&b, "%s\n", styleSelected.Render(" "+artist+" "))
+		fmt.Fprintf(&b, "%s\n", styleTitle.Render(" "+artist+" "))
 		fmt.Fprintf(&b, "%s\n", m.status.Title)
 		if m.status.Album != "" {
 			fmt.Fprintf(&b, "%s\n", styleMuted.Render(m.status.Album))
 		}
-		fmt.Fprintf(&b, "%s\n", styleMuted.Render(m.status.File))
 	}
 	if len(m.queue) > 0 {
 		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
