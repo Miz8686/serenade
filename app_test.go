@@ -750,3 +750,26 @@ func TestFullBleedViewPerf(t *testing.T) {
 		t.Fatalf("full-bleed View took %v", d)
 	}
 }
+
+func TestGlowFloor(t *testing.T) {
+	// Near-ink cells lift toward the track color; everything else
+	// passes through untouched.
+	r, g, b := glowFloor(5, 5, 5, "#fd002a")
+	if r <= 15 || g > 5 || b < 5 {
+		t.Fatalf("sub-ink cell must lift redward, got %d,%d,%d", r, g, b)
+	}
+	if r > 40 {
+		t.Fatalf("floor lift must stay subtle, got %d,%d,%d", r, g, b)
+	}
+	if rr, gg, bb := glowFloor(10, 10, 10, "#fd002a"); rr != 10 || gg != 10 || bb != 10 {
+		t.Fatalf("above-floor cell must pass through, got %d,%d,%d", rr, gg, bb)
+	}
+	if rr, gg, bb := glowFloor(100, 90, 80, "#fd002a"); rr != 100 || gg != 90 || bb != 80 {
+		t.Fatalf("lit cell must pass through, got %d,%d,%d", rr, gg, bb)
+	}
+	// lifted cell keeps paper contrast in the double digits
+	hex := fmt.Sprintf("#%02x%02x%02x", r, g, b)
+	if c := contrastRatio("#EDE0C8", hex); c < 9.0 {
+		t.Fatalf("lifted cell contrast %.2f", c)
+	}
+}

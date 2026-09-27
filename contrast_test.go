@@ -98,11 +98,15 @@ func TestFullBleedContrast(t *testing.T) {
 	}
 	n := 0
 	for _, tr := range tracks {
-		img, _, _, err := cachedArt(tr.Path)
+		img, prim, _, err := cachedArt(tr.Path)
 		if err != nil || img == nil {
 			continue
 		}
 		n++
+		glow := prim
+		if glow == "" {
+			glow = themeBase.Accent
+		}
 		bg := scrimAdaptive(smallBlur(toRGBA(img)), themeBase.Bg)
 		b := bg.Bounds()
 		local := map[string]float64{}
@@ -112,7 +116,8 @@ func TestFullBleedContrast(t *testing.T) {
 		for y := 0; y < b.Dy(); y += 4 {
 			for x := 0; x < b.Dx(); x += 4 {
 				r, g, bl, _ := bg.RGBAAt(x, y).RGBA()
-				hex := fmt.Sprintf("#%02x%02x%02x", int(r>>8), int(g>>8), int(bl>>8))
+				fr, fg2, fb := glowFloor(int(r>>8), int(g>>8), int(bl>>8), glow)
+				hex := fmt.Sprintf("#%02x%02x%02x", fr, fg2, fb)
 				for _, f := range fg {
 					if c := contrastRatio(f.hex, hex); c < local[f.name] {
 						local[f.name] = c

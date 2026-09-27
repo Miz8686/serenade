@@ -1754,16 +1754,43 @@ func (m *model) syncBgGrid() {
 		return
 	}
 	sb := bg.Bounds()
+	glowHex := m.artPrim
+	if glowHex == "" {
+		glowHex = themeBase.Accent
+	}
 	grid := make([]string, 0, W*H)
 	for y := 0; y < H; y++ {
 		sy := sb.Min.Y + y*sb.Dy()/H
 		for x := 0; x < W; x++ {
 			sx := sb.Min.X + x*sb.Dx()/W
 			br, bgg, bb, _ := bg.RGBAAt(sx, sy).RGBA()
-			grid = append(grid, fmt.Sprintf("\x1b[48;2;%d;%d;%dm", br>>8, bgg>>8, bb>>8))
+			r, g, b := glowFloor(int(br>>8), int(bgg>>8), int(bb>>8), glowHex)
+			grid = append(grid, fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b))
 		}
 	}
 	m.bgGrid, m.bgGridW, m.bgGridH = grid, W, H
+}
+
+// glowFloor lifts sub-floor cells toward the track color so the
+// atmosphere reaches every corner: below floorLum reads as an
+// unpainted hole, not mood. Cells already above the floor pass
+// through untouched, so dark covers stay dark.
+func glowFloor(r, g, b int, glowHex string) (int, int, int) {
+	const floorLum = 0.035
+	fr, fg, fb := float64(r)/255, float64(g)/255, float64(b)/255
+	lum := 0.2126*fr + 0.7152*fg + 0.0722*fb
+	if lum >= floorLum {
+		return r, g, b
+	}
+	var gr, gg, gb int
+	fmt.Sscanf(glowHex, "#%02x%02x%02x", &gr, &gg, &gb)
+	gfr, gfg, gfb := float64(gr)/255, float64(gg)/255, float64(gb)/255
+	glowLum := 0.2126*gfr + 0.7152*gfg + 0.0722*gfb
+	if glowLum <= floorLum {
+		return r, g, b
+	}
+	k := (floorLum - lum) / (glowLum - lum)
+	return int((fr + (gfr-fr)*k) * 255), int((fg + (gfg-fg)*k) * 255), int((fb + (gfb-fb)*k) * 255)
 }
 
 // paintFullBleed replays content cells over the backdrop grid. Only
