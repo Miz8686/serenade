@@ -773,3 +773,44 @@ func TestGlowFloor(t *testing.T) {
 		t.Fatalf("lifted cell contrast %.2f", c)
 	}
 }
+
+func TestAlbumSubgrouping(t *testing.T) {
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{
+		{Path: "/a1", Artist: "Alpha", Album: "One", Title: "t1"},
+		{Path: "/a2", Artist: "Alpha", Album: "One", Title: "t2"},
+		{Path: "/a3", Artist: "Alpha", Album: "Two", Title: "t3"},
+		{Path: "/b1", Artist: "Beta", Album: "Solo", Title: "t4"},
+	}
+	m.view = m.tracks
+	m.cursor, m.offset = 0, 0
+	if n := runAlbums(m.view, 0); n != 2 {
+		t.Fatalf("runAlbums(Alpha)=%d want 2", n)
+	}
+	if n := runAlbums(m.view, 3); n != 1 {
+		t.Fatalf("runAlbums(Beta)=%d want 1", n)
+	}
+	lines := m.listWindow()
+	var kinds []int
+	for _, l := range lines {
+		kinds = append(kinds, l.kind)
+	}
+	want := []int{llArtist, llTrack, llTrack, llAlbum, llTrack, llGap, llArtist, llTrack}
+	if len(kinds) != len(want) {
+		t.Fatalf("window kinds %v, want %v", kinds, want)
+	}
+	for i := range want {
+		if kinds[i] != want[i] {
+			t.Fatalf("window kinds %v, want %v", kinds, want)
+		}
+	}
+	if got := m.screenSpan(0, 3); got != len(lines) {
+		t.Fatalf("screenSpan=%d != window %d", got, len(lines))
+	}
+	// album rows are not selectable
+	um, _ := m.handleMouse(tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if um.(model).cursor != 0 {
+		t.Fatalf("album click moved cursor to %d", um.(model).cursor)
+	}
+}

@@ -233,3 +233,73 @@ func TestContentWidthWithLyrics(t *testing.T) {
 		}
 	}
 }
+
+func TestNoTrailingBG(t *testing.T) {
+	// The brief's regression net: background-colored styles must
+	// never extend past the last visible glyph — on headings,
+	// pills, muted rows, or lyric lines, in any script. Counts
+	// bg-carrying cells after the final glyph.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	buildBaseStyles()
+	stray := func(rendered string) int {
+		type cell struct {
+			ch rune
+			bg bool
+		}
+		var cells []cell
+		bg := false
+		rs := []rune(rendered)
+		for i := 0; i < len(rs); {
+			if rs[i] == '\x1b' && i+1 < len(rs) && rs[i+1] == '[' {
+				j := i + 2
+				for j < len(rs) && !(rs[j] >= '@' && rs[j] <= '~') {
+					j++
+				}
+				if j < len(rs) {
+					j++
+				}
+				if strings.HasSuffix(string(rs[i:j]), "m") {
+					bg = sgrBg(string(rs[i:j]), bg)
+				}
+				i = j
+				continue
+			}
+			cells = append(cells, cell{rs[i], bg})
+			i++
+		}
+		last := -1
+		for k, c := range cells {
+			if c.ch != ' ' {
+				last = k
+			}
+		}
+		n := 0
+		for k := last + 1; k < len(cells); k++ {
+			if cells[k].bg {
+				n++
+			}
+		}
+		return n
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	pad := func(s string) string {
+		if d := m.listPaneW() - lyricWidth(stripANSI(s)); d > 0 {
+			return s + strings.Repeat(" ", d)
+		}
+		return s
+	}
+	cases := map[string]string{
+		"heading": pad(styleArtist.Render("काठमाडौं एल्बम")),
+		"pill":    styleSelected.Render("test"),
+		"muted":   styleMuted.Render("album line here"),
+		"lyric":   styleMuted.Render("खसेका तारा गन्दै"),
+		"lyrpill": styleSelected.Render("खसेका तारा गन्दै"),
+	}
+	for name, out := range cases {
+		if n := stray(out); n > 0 {
+			t.Fatalf("%s: %d bg cells past last glyph", name, n)
+		}
+	}
+}

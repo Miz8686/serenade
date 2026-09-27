@@ -238,14 +238,31 @@ const (
 	llTrack = iota
 	llArtist
 	llGap
+	llAlbum
 )
 
 type listLine struct {
 	kind int
-	idx  int // view index for llTrack/llArtist
+	idx  int // view index for llTrack/llArtist/llAlbum
 }
 
 func artistKey(a string) string { return strings.ToLower(a) }
+
+// runAlbums counts distinct non-empty albums in the artist run
+// starting at i (same artistKey). Pure for testability.
+func runAlbums(view []Track, i int) int {
+	if i < 0 || i >= len(view) {
+		return 0
+	}
+	ak := artistKey(view[i].Artist)
+	seen := map[string]bool{}
+	for j := i; j < len(view) && artistKey(view[j].Artist) == ak; j++ {
+		if view[j].Album != "" {
+			seen[view[j].Album] = true
+		}
+	}
+	return len(seen)
+}
 
 // screenSpan counts emitted screen rows from track a through track b
 // inclusive (headings + gaps + tracks). Must match listWindow exactly
@@ -255,6 +272,8 @@ func (m model) screenSpan(a, b int) int {
 		return max(0, b-a+1)
 	}
 	n, prevA, first := 0, "", true
+	var curMulti bool
+	curAlbum := ""
 	for i := a; i <= b && i < len(m.view); i++ {
 		ak := artistKey(m.view[i].Artist)
 		// The artist-less run gets no heading: its titles already
@@ -265,9 +284,18 @@ func (m model) screenSpan(a, b int) int {
 			}
 			n++
 			prevA, first = ak, false
+			curMulti, curAlbum = runAlbums(m.view, i) > 1, ""
 		} else if first {
 			first = false
 			prevA = ak
+			curMulti, curAlbum = runAlbums(m.view, i) > 1, ""
+		}
+		al := m.view[i].Album
+		if curMulti && al != "" && curAlbum != "" && al != curAlbum {
+			n++
+			curAlbum = al
+		} else if curMulti && al != "" && curAlbum == "" {
+			curAlbum = al
 		}
 		n++
 	}
@@ -288,6 +316,8 @@ func (m model) listWindow() []listLine {
 		return lines
 	}
 	prevA, first := "", true
+	var curMulti bool
+	curAlbum := ""
 	for i := m.offset; i < len(m.view) && len(lines) < vis; i++ {
 		ak := artistKey(m.view[i].Artist)
 		if m.view[i].Artist != "" && (first || ak != prevA) {
@@ -303,8 +333,22 @@ func (m model) listWindow() []listLine {
 			}
 			lines = append(lines, listLine{llArtist, i})
 			prevA, first = ak, false
+			curMulti, curAlbum = runAlbums(m.view, i) > 1, ""
 		} else if first {
 			first, prevA = false, ak
+			curMulti, curAlbum = runAlbums(m.view, i) > 1, ""
+		}
+		// Quiet album sub-level, multi-album runs only: muted,
+		// no extra gaps. Needs its track below it, like headings.
+		al := m.view[i].Album
+		if curMulti && al != "" && curAlbum != "" && al != curAlbum {
+			if len(lines)+2 > vis {
+				break
+			}
+			lines = append(lines, listLine{llAlbum, i})
+			curAlbum = al
+		} else if curMulti && al != "" && curAlbum == "" {
+			curAlbum = al
 		}
 		if len(lines)+1 > vis {
 			break
@@ -1971,6 +2015,8 @@ func (m model) View() string {
 			rows = append(rows, "")
 		case llArtist:
 			rows = append(rows, styleArtist.Render(strings.ToUpper(m.view[ln.idx].Artist)))
+		case llAlbum:
+			rows = append(rows, styleMuted.Render("  "+m.view[ln.idx].Album))
 		default:
 			i := ln.idx
 			t := m.view[i]
@@ -2002,11 +2048,19 @@ func (m model) View() string {
 	for len(rows) < vis {
 		rows = append(rows, "")
 	}
+	// padCol pads rows to the column width by the SHARED terminal
+	// ruler (lyricWidth), never lipgloss Width: lipgloss pads per a
+	// ruler that zeroes spacing marks, so non-Latin rows would come
+	// up short here and every join below would re-pad them into
+	// overshoot — background blocks trailing after text. One ruler
+	// for every bg-adjacent pad, no exceptions.
 	padCol := func(w int, lines []string) string {
-		st := lipgloss.NewStyle().Width(w)
 		out := make([]string, len(lines))
 		for i, l := range lines {
-			out[i] = st.Render(l)
+			if d := w - lyricWidth(stripANSI(l)); d > 0 {
+				l += strings.Repeat(" ", d)
+			}
+			out[i] = l
 		}
 		return lipgloss.JoinVertical(lipgloss.Left, out...)
 	}

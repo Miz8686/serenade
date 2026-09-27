@@ -77,6 +77,15 @@ func (c Config) pulseOn() bool {
 // mochaTheme is the DEFAULT house palette: brass & verdigris on warm
 // ink — an original instrument palette, not a stock theme. (The "mocha"
 // id is kept so existing config.toml files keep resolving.)
+//
+// DELIBERATE NON-FEATURE, documented so it isn't silently revisited:
+// no window transparency. The app already paints a controlled,
+// contrast-verified full-bleed backdrop from the album art (locked by
+// TestFullBleedContrast over the whole library). Terminal-level
+// transparency would stack the desktop underneath as a second,
+// uncontrolled background competing with the tuned one — atmosphere
+// you can't verify against. The dedicated alacritty/serenade.toml
+// keeps this window opaque (opacity 1.0) on purpose.
 var mochaTheme = Theme{
 	Base: "mocha", Bg: "#161310", Surface: "#2E2822", Dim: "#0F0D0B",
 	Text: "#EDE0C8", Muted: "#9C8D75", Accent: "#D9A44C", Accent2: "#43B3AE",
