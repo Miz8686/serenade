@@ -211,3 +211,19 @@ func TestIsNaturalEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestPrevTrackPath(t *testing.T) {
+	tr := []Track{{Path: "/a"}, {Path: "/b"}, {Path: "/c"}}
+	if p, ok := prevTrackPath(tr, "/b"); !ok || p != "/a" {
+		t.Fatalf("mid prev: %q %v", p, ok)
+	}
+	if p, ok := prevTrackPath(tr, "/a"); !ok || p != "/c" {
+		t.Fatalf("wrap prev: %q %v", p, ok)
+	}
+	if p, ok := prevTrackPath(tr, "/missing"); !ok || p != "/c" {
+		t.Fatalf("unknown falls back to last: %q %v", p, ok)
+	}
+	if _, ok := prevTrackPath(nil, "/a"); ok {
+		t.Fatalf("empty must not advance")
+	}
+}

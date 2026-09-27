@@ -234,8 +234,6 @@ func (b *backend) stop() {
 	}
 	_, _ = b.runRemote("-C", "player-stop")
 }
-func (b *backend) next() error { _, err := b.runRemote("-C", "player-next"); return err }
-func (b *backend) prev() error { _, err := b.runRemote("-C", "player-prev"); return err }
 func (b *backend) seek(delta int) error {
 	_, err := b.runRemote("-C", fmt.Sprintf("seek %+d", delta))
 	return err

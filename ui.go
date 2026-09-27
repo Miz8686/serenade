@@ -404,10 +404,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		_ = m.be.toggle()
 		return m, nil
 	case is("next", k):
-		_ = m.be.next()
+		m.playNext()
 		return m, nil
 	case is("prev", k):
-		_ = m.be.prev()
+		m.playPrev()
 		return m, nil
 	case is("seekback", k):
 		_ = m.be.seek(-5)
@@ -488,6 +488,21 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func isNaturalEnd(prev, cur Status) bool {
 	return prev.State == "playing" && prev.File != "" && cur.State == "stopped" &&
 		(cur.File == prev.File || cur.File == "")
+}
+
+// prevTrackPath mirrors nextTrackPath backwards, wrapping to the last
+// track. Previous ALWAYS means previous-in-library — no restart
+// threshold, no backend playlist involved.
+func prevTrackPath(tracks []Track, curFile string) (string, bool) {
+	if len(tracks) == 0 {
+		return "", false
+	}
+	for i, t := range tracks {
+		if t.Path == curFile {
+			return tracks[(i-1+len(tracks))%len(tracks)].Path, true
+		}
+	}
+	return tracks[len(tracks)-1].Path, true
 }
 
 // nextTrackPath returns the path after prevFile in library order,
@@ -571,6 +586,31 @@ func pickNext(queue []string, tracks []Track, prevFile string, shuf *shuffleStat
 	}
 	next, ok = nextTrackPath(tracks, prevFile)
 	return next, queue, ok
+}
+
+// playNext/playPrev implement transport through OUR library order
+// (queue-aware for next), never cmus's internal playlist. cmus's
+// player-next/prev on its single-file -f playlist either no-ops or
+// restarts the current track — both reported as bugs.
+func (m *model) playNext() {
+	next, rest, ok := pickNext(m.queue, m.tracks, m.status.File, &m.shuf)
+	if !ok {
+		return
+	}
+	m.queue = rest
+	if err := m.be.playFile(next); err != nil {
+		m.beErr = err.Error()
+	}
+}
+
+func (m *model) playPrev() {
+	prev, ok := prevTrackPath(m.tracks, m.status.File)
+	if !ok {
+		return
+	}
+	if err := m.be.playFile(prev); err != nil {
+		m.beErr = err.Error()
+	}
 }
 
 func (m *model) advance(prevFile string) {
@@ -681,11 +721,11 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.flash = z.action
 				switch z.action {
 				case "prev":
-					_ = m.be.prev()
+					m.playPrev()
 				case "play":
 					_ = m.be.toggle()
 				case "next":
-					_ = m.be.next()
+					m.playNext()
 				case "shuffle":
 					m.reshuffleAndPlay()
 				}
