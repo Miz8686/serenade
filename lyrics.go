@@ -113,6 +113,112 @@ func parseLRC(s string) []lyricLine {
 	return out
 }
 
+// lyricWidth counts terminal cells the way a dumb terminal does:
+// one cell per codepoint except zero-width joiners and nonspacing
+// marks. Spacing marks (Devanagari vowel signs et al., Mc) take a
+// cell — runewidth and x/ansi both count them 0, which undercounts
+// real terminals and lets lyric lines eat the frame edge. Latin and
+// CJK measure identically to runewidth; only Mc differs.
+func lyricWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if r == '\u200d' || r == '\ufe0f' {
+			continue
+		}
+		if isNonspacing(r) {
+			continue
+		}
+		// East Asian wide/fullwidth stay 2; everything else 1.
+		if isWide(r) {
+			w += 2
+		} else {
+			w++
+		}
+	}
+	return w
+}
+
+func isNonspacing(r rune) bool {
+	// Mn (nonspacing) and Me (enclosing) combine into the previous
+	// cell; Cf format chars are invisible. Mc (spacing) is NOT
+	// here on purpose — see lyricWidth.
+	return (r >= 0x300 && r <= 0x36F) || (r >= 0x1AB0 && r <= 0x1AFF) ||
+		(r >= 0x1DC0 && r <= 0x1DFF) || (r >= 0x20D0 && r <= 0x20FF) ||
+		(r >= 0xFE20 && r <= 0xFE2F) || r == 0x200C || r == 0x200D ||
+		(r >= 0xFE00 && r <= 0xFE0F) || (r >= 0xE0100 && r <= 0xE01EF) ||
+		(r >= 0x0483 && r <= 0x0489) || (r >= 0x0591 && r <= 0x05BD) ||
+		(r >= 0x0610 && r <= 0x061A) || (r >= 0x0646 && r <= 0x0652) ||
+		(r >= 0x0656 && r <= 0x065F) || (r >= 0x0670 && r <= 0x0670) ||
+		(r >= 0x06D6 && r <= 0x06DC)
+}
+
+func isWide(r rune) bool {
+	return (r >= 0x1100 && r <= 0x115F) || r == 0x2329 || r == 0x232A ||
+		(r >= 0x2E80 && r <= 0x303E) || (r >= 0x3041 && r <= 0x33FF) ||
+		(r >= 0x3400 && r <= 0x4DBF) || (r >= 0x4E00 && r <= 0xA4CF) ||
+		(r >= 0xA960 && r <= 0xA97C) || (r >= 0xAC00 && r <= 0xD7A3) ||
+		(r >= 0xF900 && r <= 0xFAFF) || (r >= 0xFE10 && r <= 0xFE19) ||
+		(r >= 0xFE30 && r <= 0xFE4F) || (r >= 0xFF00 && r <= 0xFF60) ||
+		(r >= 0xFFE0 && r <= 0xFFE6) || (r >= 0x20000 && r <= 0x3FFFD)
+}
+
+// lyricTruncate cuts s to w terminal cells, appending … on cut.
+// Dual cap: cell width AND rune count. Unshaped terminals give
+// every codepoint its own cell, so a 65-"cell" Devanagari line can
+// still be 80+ cells there and eat the frame edge; the rune cap
+// bounds that worst case while the cell cap handles CJK/emoji.
+func lyricTruncate(s string, w int) string {
+	if lyricWidth(s) <= w && len([]rune(s)) <= w {
+		return s
+	}
+	var b strings.Builder
+	used, runes := 0, 0
+	for _, r := range s {
+		var rw int
+		if isNonspacing(r) || r == '\u200d' || r == '\ufe0f' {
+			rw = 0
+		} else if isWide(r) {
+			rw = 2
+		} else {
+			rw = 1
+		}
+		if used+rw > w-1 || runes+1 > w-1 {
+			break
+		}
+		b.WriteRune(r)
+		used += rw
+		runes++
+	}
+	return b.String() + "\u2026"
+}
+
+// lyricCellWidth is the per-rune terminal cell count: wide 2,
+// zero-width joiners and nonspacing marks 0, everything else
+// (including spacing marks) 1. Shared by the backdrop painter so
+// grid columns never drift on non-Latin rows.
+func lyricCellWidth(r rune) int {
+	if r == '\u200d' || r == '\ufe0f' {
+		return 0
+	}
+	if isNonspacing(r) {
+		return 0
+	}
+	if isWide(r) {
+		return 2
+	}
+	return 1
+}
+
+// lyricPadRight pads s with spaces to exactly w lyricWidth cells so
+// downstream joins (which measure with a different ruler) add
+// nothing and can't overshoot the column.
+func lyricPadRight(s string, w int) string {
+	if d := w - lyricWidth(s); d > 0 {
+		return s + strings.Repeat(" ", d)
+	}
+	return s
+}
+
 // plainLines splits unsynced text into display lines.
 func plainLines(s string) []lyricLine {
 	var out []lyricLine

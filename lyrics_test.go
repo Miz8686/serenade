@@ -139,10 +139,97 @@ func TestLyricHighlight(t *testing.T) {
 	m.status = Status{Position: 25}
 	out := m.renderLyrics(3)
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[1], "38;2;253;0;42m") {
-		t.Fatalf("current line must carry track accent: %q", lines[1])
+	if !strings.Contains(lines[1], "48;2;253;0;42m") {
+		t.Fatalf("current line must carry the selection pill: %q", lines[1])
 	}
 	if strings.Contains(lines[0], "253;0;42") || strings.Contains(lines[2], "253;0;42") {
 		t.Fatalf("only the current line accents")
+	}
+}
+
+func TestFrameHeightWithLyrics(t *testing.T) {
+	// Regression: Devanagari lyric lines once word-wrapped in the
+	// frame renderer (ruler disagreement), fracturing the view with
+	// phantom rows. The frame must stay exactly height rows.
+	os.Setenv("HOME", "/home/miz")
+	c, ok := lyricLoad("Albatross", "Khaseka Tara", "Jo Jas Sanga Sambandhit Chha - EP")
+	if !ok || !c.Found {
+		t.Skip("lyric cache missing")
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{{Path: "/x", Artist: "A", Title: "T"}}
+	m.view = m.tracks
+	m.indexing = false
+	m.lyrFile = "/x"
+	m.lyrLines = plainLines(c.Plain)
+	m.artImg = stripeImage(144, 144, 6, 0.8, 0.8)
+	m.artBlock = m.renderArt()
+	m.syncBgGrid()
+	m.layoutPanes()
+	out := m.View()
+	if n := strings.Count(out, "\n") + 1; n != 39 {
+		t.Fatalf("view is %d rows, want 39", n)
+	}
+}
+
+func TestLyricWidth(t *testing.T) {
+	if lyricWidth("hello") != 5 {
+		t.Fatalf("ascii")
+	}
+	if lyricWidth("日本語") != 6 {
+		t.Fatalf("cjk")
+	}
+	// Devanagari vowel signs (Mc, spacing) take a cell each in real
+	// terminals; runewidth zeroes them and lets lines eat the frame.
+	marks := 0
+	for _, r := range "ोे" {
+		if !isNonspacing(r) {
+			marks++
+		}
+	}
+	if marks != 2 {
+		t.Fatalf("Mc marks must count, got %d", marks)
+	}
+	// ख(1) ्(Mn→0) स(1) े(Mc→1) क(1) ा(Mc→1) = 5 cells
+	if got := lyricWidth("खसेका"); got != 5 {
+		t.Fatalf("khaseka width=%d want 5", got)
+	}
+	long := "खसेका तारा गन्दै तिमीलाई नै मागी बसेँ आज फेरि अतिरिक्त शब्दहरू"
+	tr := lyricTruncate(long, 65)
+	if lyricWidth(tr) > 65 {
+		t.Fatalf("truncated width=%d over 65", lyricWidth(tr))
+	}
+	if lyricTruncate("short", 65) != "short" {
+		t.Fatalf("short lines pass through")
+	}
+}
+
+func TestContentWidthWithLyrics(t *testing.T) {
+	// Every content row must fit contentW cells on a Mc=1 ruler
+	// (real terminals) or text eats the frame edge.
+	os.Setenv("HOME", "/home/miz")
+	c, ok := lyricLoad("Albatross", "Khaseka Tara", "Jo Jas Sanga Sambandhit Chha - EP")
+	if !ok || !c.Found {
+		t.Skip("lyric cache missing")
+	}
+	m := newModel(&backend{sock: "/nonexistent.sock"}, false, defaultConfig())
+	m.width, m.height = 167, 39
+	m.tracks = []Track{{Path: "/x", Artist: "A", Title: "T"}}
+	m.view = m.tracks
+	m.indexing = false
+	m.lyrFile = "/x"
+	m.lyrLines = plainLines(c.Plain)
+	m.artImg = stripeImage(144, 144, 6, 0.8, 0.8)
+	m.artBlock = m.renderArt()
+	m.syncBgGrid()
+	m.layoutPanes()
+	m.status = Status{State: "playing", File: "/x", Position: 30, Duration: 180}
+	out := m.View()
+	for i, ln := range strings.Split(out, "\n") {
+		if w := lyricWidth(stripANSI(ln)); w > 167 {
+			s := stripANSI(ln)
+			t.Fatalf("row %d is %d cells wide runes=%d\n%q", i, w, len([]rune(s)), s)
+		}
 	}
 }

@@ -1873,7 +1873,10 @@ func (m model) paintFullBleed(content string) string {
 				i = j
 				continue
 			}
-			w := runewidth.RuneWidth(r)
+			// Terminal ruler (not runewidth): undercounting
+			// marks here pads phantom spaces AND desyncs the grid
+			// for every line below.
+			w := lyricCellWidth(r)
 			if !bgOn && cell < len(m.bgGrid) {
 				if gb := m.bgGrid[cell]; gb != lastBG {
 					b.WriteString(gb)
@@ -2030,9 +2033,13 @@ func (m model) View() string {
 	} else {
 		textPart = m.detail.View()
 	}
-	parts = append(parts, textPart, m.renderViz())
+	// Blocks render trailing newlines; trim one per block so the
+	// column sums exactly (a phantom row per block otherwise
+	// overflows the frame whenever content fills it).
+	trim1 := func(s string) string { return strings.TrimSuffix(s, "\n") }
+	parts = append(parts, textPart, trim1(m.renderViz()))
 	if !m.bgMode() {
-		parts = append(parts, m.artBlock)
+		parts = append(parts, trim1(m.artBlock))
 		// Lyrics take exactly the leftover rows under the panel:
 		// viewport height + strip + art are all fixed, so this
 		// fills dead space without moving anything else.
@@ -2043,7 +2050,7 @@ func (m model) View() string {
 		_, artRows := m.artBox()
 		if left := topH - m.detail.Height - vizRows - artRows; left >= 2 {
 			if lyr := m.renderLyrics(left); lyr != "" {
-				parts = append(parts, lyr)
+				parts = append(parts, trim1(lyr))
 			}
 		}
 	}
@@ -2076,10 +2083,52 @@ func (m model) View() string {
 	statusText = lipgloss.NewStyle().Width(contentW).Render(statusText)
 	hrule := styleDivider.Render(strings.Repeat("\u2500", contentW))
 	content := lipgloss.JoinVertical(lipgloss.Left, top, hrule, barLine, statusText)
+	// fitContent trims trailing padding past contentW. Joins pad
+	// short-measured rows per THEIR ruler; when scripts disagree
+	// (marks the join counts 0), the padding overshoots in real
+	// terminals and desyncs the backdrop grid below the overlong
+	// row. Only bare trailing spaces ever trim, so text is safe.
+	var fitted []string
+	for _, ln := range strings.Split(content, "\n") {
+		for lyricWidth(stripANSI(ln)) > contentW && strings.HasSuffix(ln, " ") {
+			ln = ln[:len(ln)-1]
+		}
+		fitted = append(fitted, ln)
+	}
+	content = strings.Join(fitted, "\n")
 	if len(m.bgGrid) > 0 {
 		content = m.paintFullBleed(content)
 	}
-	return m.frameStyle().Width(contentW).Render(content)
+	return m.frameBox(content, contentW)
+}
+
+// frameBox draws the outer edge by hand: lipgloss borders pad
+// short-measured rows per their own ruler, and any ruler
+// disagreement on non-Latin scripts (Devanagari marks counted 0)
+// overshoots real terminals with padding that eats the edge —
+// measured here once. Hand placement pads nothing and wraps
+// nothing; content rows arrive exact, the edge just outlines.
+// Do not "simplify" back to a lipgloss border.
+func (m model) frameBox(content string, w int) string {
+	fr, fg, fb := hexParts(string(m.frameColor()))
+	br, bg, bb := hexParts(string(colBG))
+	open := fmt.Sprintf("\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm", fr, fg, fb, br, bg, bb)
+	edge := func(ch string) string { return open + ch + "\x1b[0m" }
+	var b strings.Builder
+	b.WriteString(edge("\u250f") + open + strings.Repeat("\u2501", w) + edge("\u2513") + "\n")
+	for _, ln := range strings.Split(content, "\n") {
+		b.WriteString(edge("\u2503") + ln + edge("\u2503") + "\n")
+	}
+	b.WriteString(edge("\u2517") + open + strings.Repeat("\u2501", w) + edge("\u2513"))
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// hexParts parses #rrggbb into channels. Zero on garbage — border
+// cells only, never content.
+func hexParts(h string) (int, int, int) {
+	var r, g, b int
+	fmt.Sscanf(h, "#%02x%02x%02x", &r, &g, &b)
+	return r, g, b
 }
 
 // loadLyrics resolves display lines for file: embedded tags,
@@ -2157,9 +2206,11 @@ func (m model) renderLyrics(height int) string {
 	}
 	var b strings.Builder
 	for i := from; i < to; i++ {
-		line := runewidth.Truncate(m.lyrLines[i].text, w, "\u2026")
+		line := lyricTruncate(m.lyrLines[i].text, w)
 		if m.lyrSynced && i == cur {
-			b.WriteString(stylePlaying.Render(line) + "\n")
+			// The sounding line gets the full selection pill:
+			// same surface as the playing row, unmissable.
+			b.WriteString(styleSelected.Render(line) + "\n")
 		} else {
 			b.WriteString(styleMuted.Render(line) + "\n")
 		}
