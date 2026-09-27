@@ -1380,7 +1380,7 @@ func (m *model) loadArt(path string) {
 func (m model) emptyArt() string {
 	_, rows := m.artBox()
 	var b strings.Builder
-	b.WriteString(styleMuted.Render("♪ no cover art") + "\n")
+	b.WriteString(styleMuted.Render(iconPlaying+" no cover art") + "\n")
 	for i := 1; i < rows; i++ {
 		b.WriteString("\n")
 	}
@@ -1484,7 +1484,7 @@ func (m *model) detailText() string {
 		fmt.Fprintf(&b, "\nQueue (%d)\n", len(m.queue))
 	}
 	if m.shuf.on {
-		fmt.Fprintf(&b, "%s\n", stylePlaying.Render("⇄ shuffle on"))
+		fmt.Fprintf(&b, "%s\n", stylePlaying.Render(iconShuffle+" shuffle on"))
 	}
 	content := b.String()
 	return content
@@ -1543,6 +1543,25 @@ func (m model) queueView() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// Instrument iconography. Every glyph below is verified PRESENT in
+// JetBrainsMono Nerd Font itself (fc-match "JetBrainsMono Nerd
+// Font Mono:charset=<hex>" resolves to the JBM file, not a fallback)
+// — the old ⇄ never passed that check (DejaVu fallback), and neither
+// did ⏮⏭⏸ (Adwaita) nor ♪ (DejaVu). The SMuFL musical-notation block
+// (U+1D15F et al.) was auditioned and REJECTED for the same reason: it
+// resolves to Noto Music at mismatched metrics. So: the note marks
+// the sounding voice (playing row, empty-art placeholder), transport
+// uses Font Awesome's in-font step/play/pause, shuffle is FA random.
+// All single-cell, so button geometry is untouched.
+const (
+	iconPlaying = "\uf001" // FA music note: the sounding track
+	iconPrev    = "\uf048" // FA step-backward
+	iconPlay    = "\uf04b" // FA play
+	iconPause   = "\uf04c" // FA pause
+	iconNext    = "\uf051" // FA step-forward
+	iconShuffle = "\uf074" // FA random: shuffle
+)
+
 // btnZone is a clickable status-bar region: rune-width offsets within
 // the status content line (border adds +1 to X at hit-test time).
 type btnZone struct {
@@ -1575,20 +1594,20 @@ func (m model) statusLine() (string, []btnZone) {
 		b.WriteString(cell)
 		pos += runewidth.StringWidth(cell)
 	}
-	play := "▶"
+	play := iconPlay
 	if m.status.State == "paused" {
-		play = "⏸"
+		play = iconPause
 	}
-	button("⏮", "prev")
+	button(iconPrev, "prev")
 	b.WriteString(" ")
 	pos++
 	button(play, "play")
 	b.WriteString(" ")
 	pos++
-	button("⏭", "next")
+	button(iconNext, "next")
 	b.WriteString(" ")
 	pos++
-	shufCell := " ⇄ "
+	shufCell := " " + iconShuffle + " "
 	zones = append(zones, btnZone{pos, pos + runewidth.StringWidth(shufCell), "shuffle"})
 	if m.shuf.on {
 		shufCell = styleSelected.Render(shufCell)
@@ -1653,7 +1672,7 @@ func (m model) View() string {
 			// unstyled rows, and only while a search is active
 			// (viewHL is cleared with the query).
 			if t.Path == playing && playing != "" {
-				line := "▶ " + t.Title
+				line := iconPlaying + " " + t.Title
 				if i == m.cursor {
 					rows = append(rows, styleSelected.Render(line))
 				} else {

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 )
 
@@ -130,7 +131,7 @@ func TestPlayingRowDistinct(t *testing.T) {
 	buildBaseStyles()
 	plain := "  artist - title"
 	cursor := styleSelected.Render(plain)
-	playing := stylePlaying.Render("▶ artist - title")
+	playing := stylePlaying.Render(iconPlaying + " artist - title")
 	if cursor == playing {
 		t.Fatalf("cursor and playing-row styles are identical")
 	}
@@ -477,5 +478,15 @@ func TestMeterBar(t *testing.T) {
 	}
 	if got := m.renderBar(0); strings.Contains(got, "█") {
 		t.Fatalf("zero progress must render no filled cells")
+	}
+}
+
+func TestIconWidths(t *testing.T) {
+	// Every transport/marker glyph must stay single-cell: button
+	// zones and list alignment are derived from runewidth.
+	for _, g := range []string{iconPlaying, iconPrev, iconPlay, iconPause, iconNext, iconShuffle} {
+		if w := runewidth.StringWidth(g); w != 1 {
+			t.Fatalf("icon U+%04X width=%d, want 1", []rune(g)[0], w)
+		}
 	}
 }
