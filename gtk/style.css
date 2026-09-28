@@ -1,12 +1,12 @@
-/* Serenade GTK theme — same token system as the TUI, fought for
- * over several rounds and carried over unchanged:
- * ink/paper base, brass primary, verdigris secondary.
+/* Serenade GTK theme — same token system as the TUI.
  *
- * Ceiling rule (explicit, not relitigated): per-track accent color
- * is allowed on ONE surface — the list selection state, injected at
- * runtime by applyAccent — and nowhere else. Every other rule below
- * names only the base tokens, so the identity holds no matter how
- * loud the current cover is. */
+ * Hierarchy rules (deliberate, all in one place):
+ * - ink/paper base; surface for grouped regions only.
+ * - brass/verdigris are brand accents with fixed jobs, never decoration.
+ * - Per-track accent may color the list selection state ONLY
+ *   (runtime override below); everything else stays on base tokens.
+ * - No gradients, glow, blur, or glass in this pass.
+ */
 
 @define-color ink #161310;
 @define-color surface #2E2822;
@@ -16,43 +16,61 @@
 @define-color verdigris #43B3AE;
 @define-color darkfg #161310;
 
-window, .app {
-  background-color: @ink;
-  color: @paper;
+/* Left pane header: quiet. */
+.app-header {
+  color: @muted;
+  font-size: 0.85em;
+  font-weight: 700;
 }
 
+.library-heading {
+  color: @paper;
+  font-size: 1.05em;
+  font-weight: 800;
+}
+
+/* Library list. */
 .tracklist {
   background-color: @ink;
   color: @paper;
 }
 
 .tracklist row {
-  padding: 2px 10px;
+  padding: 3px 10px;
+}
+
+/* Selection: tinted surface + solid accent edge + dark-on-bright
+ * text. Distinct from hover (theme default) and focus (outline,
+ * untouched here) by construction, and never color-alone: the
+ * playing row additionally carries the note marker in its label. */
+.tracklist row:selected {
+  background-color: alpha(@brass, 0.28);
+  border-left: 3px solid @brass;
   color: @paper;
 }
 
-/* Fallback selection before any track accent arrives. The runtime
- * override replaces the background per track; color stays dark. */
-.tracklist row:selected {
-  background-color: @brass;
-  color: @darkfg;
-}
-
+/* Artist headings: structure by weight, normal case. The teal
+ * accent is reserved for states, not spent on every heading. */
 .artist-heading {
-  color: @verdigris;
+  color: @paper;
   font-weight: 800;
   font-size: 1.05em;
-  padding: 6px 10px 0 10px;
 }
 
-.track-row {
+.track-title {
   color: @paper;
 }
 
+.track-meta {
+  color: @muted;
+  font-size: 0.85em;
+}
+
+/* Now Playing: title is the loudest text in the details. */
 .np-artist {
   color: @brass;
-  font-weight: 800;
-  font-size: 1.2em;
+  font-weight: 700;
+  font-size: 1.0em;
 }
 
 .np-title {
@@ -63,6 +81,7 @@ window, .app {
 
 .dim {
   color: @muted;
+  font-size: 0.9em;
 }
 
 .cover {
@@ -70,7 +89,28 @@ window, .app {
   border-radius: 4px;
 }
 
-button {
+/* Transport: native buttons, sized by role. Play is primary. */
+.play-primary {
+  min-width: 56px;
+  min-height: 40px;
+}
+
+.transport-btn {
+  min-width: 44px;
+  min-height: 40px;
+}
+
+/* Seek: roomy hit target, quiet trough. */
+.seek-row scale {
+  min-height: 28px;
+}
+
+.seek-row scale slider {
+  min-width: 18px;
+  min-height: 18px;
+}
+
+/* Pane divider: one quiet line, nothing more. */
+paned > separator {
   background-color: @surface;
-  color: @paper;
 }

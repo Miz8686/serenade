@@ -20,8 +20,8 @@ func TestListRows(t *testing.T) {
 			t.Fatalf("row %d kind=%d want %d", i, rows[i].kind, k)
 		}
 	}
-	if labels[0] != "ALPHA" || labels[3] != "BETA" {
-		t.Fatalf("headings not uppercased: %q %q", labels[0], labels[3])
+	if labels[0] != "Alpha" || labels[3] != "Beta" {
+		t.Fatalf("headings must keep source casing: %q %q", labels[0], labels[3])
 	}
 	if labels[1] != "one" || labels[5] != "No Artist - Track" {
 		t.Fatalf("track labels wrong: %q %q", labels[1], labels[5])

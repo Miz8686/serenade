@@ -17,6 +17,7 @@ import (
 func (a *app) buildNowPlaying(right *gtk.Box) {
 	a.art = gtk.NewPicture()
 	a.art.SetSizeRequest(320, 320)
+	a.art.SetMarginBottom(12)
 	a.art.AddCSSClass("cover")
 	right.Append(a.art)
 
@@ -43,10 +44,17 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	right.Append(a.albumL)
 
 	transport := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	transport.SetHAlign(gtk.AlignCenter)
 	right.Append(transport)
-	prev := gtk.NewButtonWithLabel("⏮")
-	a.playBtn = gtk.NewButtonWithLabel("▶")
-	next := gtk.NewButtonWithLabel("⏭")
+	prev := gtk.NewButtonFromIconName("media-skip-backward")
+	prev.SetTooltipText("Previous track")
+	prev.AddCSSClass("transport-btn")
+	a.playBtn = gtk.NewButtonFromIconName("media-playback-start")
+	a.playBtn.SetTooltipText("Play / pause")
+	a.playBtn.AddCSSClass("play-primary")
+	next := gtk.NewButtonFromIconName("media-skip-forward")
+	next.SetTooltipText("Next track")
+	next.AddCSSClass("transport-btn")
 	prev.ConnectClicked(func() { a.playPrev() })
 	a.playBtn.ConnectClicked(func() { _ = a.be.toggle() })
 	next.ConnectClicked(func() { a.playNext() })
@@ -55,7 +63,13 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	transport.Append(next)
 
 	seekRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	seekRow.AddCSSClass("seek-row")
+	seekRow.SetMarginTop(8)
+	seekRow.SetMarginBottom(4)
 	right.Append(seekRow)
+	a.posL = gtk.NewLabel("")
+	a.posL.AddCSSClass("dim")
+	seekRow.Append(a.posL)
 	a.seek = gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
 	a.seek.SetDrawValue(false)
 	a.seek.SetHExpand(true)
@@ -66,9 +80,9 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 		return false
 	})
 	seekRow.Append(a.seek)
-	a.posL = gtk.NewLabel("")
-	a.posL.AddCSSClass("dim")
-	seekRow.Append(a.posL)
+	a.durL = gtk.NewLabel("")
+	a.durL.AddCSSClass("dim")
+	seekRow.Append(a.durL)
 }
 
 func fmtTime(s int) string {
@@ -97,11 +111,14 @@ func (a *app) poll() {
 		return
 	}
 	changed := st.File != a.status.File
+	oldFile := a.status.File
 	a.prev = a.status
 	a.status = st
 	if changed {
 		a.loadArt(st.File)
 		a.followPlaying(st.File)
+		a.rebindRow(oldFile)
+		a.rebindRow(st.File)
 	}
 	a.refresh()
 }
@@ -119,9 +136,9 @@ func (a *app) refresh() {
 	a.albumL.SetText(st.Album)
 	a.noArt.SetVisible(st.File == "")
 	if st.State == "paused" {
-		a.playBtn.SetLabel("⏸")
+		a.playBtn.SetIconName("media-playback-pause")
 	} else {
-		a.playBtn.SetLabel("▶")
+		a.playBtn.SetIconName("media-playback-start")
 	}
 	if st.Duration > 0 {
 		a.seek.SetSensitive(true)
@@ -129,10 +146,12 @@ func (a *app) refresh() {
 		if nowMs()-a.scrubbed > 1500 {
 			a.seek.Adjustment().SetValue(float64(st.Position))
 		}
-		a.posL.SetText(fmtTime(st.Position) + " / " + fmtTime(st.Duration))
+		a.posL.SetText(fmtTime(st.Position))
+		a.durL.SetText(fmtTime(st.Duration))
 	} else {
 		a.seek.SetSensitive(false)
 		a.posL.SetText("")
+		a.durL.SetText("")
 	}
 }
 

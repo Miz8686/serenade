@@ -30,7 +30,8 @@ type listRow struct {
 }
 
 // listRows builds the liner-notes rows: artist heading at each
-// group start (uppercase display, original index kept for tracks).
+// group start (source casing kept — hierarchy comes from weight,
+// not shouting), then one two-line row per track.
 func listRows(view []Track) ([]listRow, []string) {
 	var rows []listRow
 	var labels []string
@@ -40,7 +41,7 @@ func listRows(view []Track) ([]listRow, []string) {
 		ak := strings.ToLower(t.Artist)
 		if t.Artist != "" && (first || ak != prev) {
 			rows = append(rows, listRow{rowArtist, i})
-			labels = append(labels, strings.ToUpper(t.Artist))
+			labels = append(labels, t.Artist)
 			prev, first = ak, false
 		} else if first {
 			first, prev = false, ak
@@ -60,10 +61,18 @@ func (a *app) buildList() *gtk.ListView {
 
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(o *glib.Object) {
-		lbl := gtk.NewLabel("")
-		lbl.SetXAlign(0)
-		lbl.SetEllipsize(pango.EllipsizeEnd)
-		o.Cast().(*gtk.ListItem).SetChild(lbl)
+		box := gtk.NewBox(gtk.OrientationVertical, 0)
+		title := gtk.NewLabel("")
+		title.SetXAlign(0)
+		title.SetEllipsize(pango.EllipsizeEnd)
+		title.AddCSSClass("track-title")
+		meta := gtk.NewLabel("")
+		meta.SetXAlign(0)
+		meta.SetEllipsize(pango.EllipsizeEnd)
+		meta.AddCSSClass("track-meta")
+		box.Append(title)
+		box.Append(meta)
+		o.Cast().(*gtk.ListItem).SetChild(box)
 	})
 	factory.ConnectBind(func(o *glib.Object) {
 		it := o.Cast().(*gtk.ListItem)
@@ -72,20 +81,34 @@ func (a *app) buildList() *gtk.ListView {
 			return
 		}
 		r := a.rows[pos]
-		lbl := it.Child().(*gtk.Label)
+		box := it.Child().(*gtk.Box)
+		title := box.FirstChild().(*gtk.Label)
+		meta := title.NextSibling().(*gtk.Label)
 		if r.kind == rowArtist {
-			lbl.SetText(strings.ToUpper(a.view[r.idx].Artist))
-			lbl.AddCSSClass("artist-heading")
-			lbl.RemoveCSSClass("track-row")
+			// Headings reuse the two-line row: name up top in
+			// heading style, meta line cleared so recycled rows
+			// never leak stale album text. Even rhythm kept.
+			title.SetText(a.view[r.idx].Artist)
+			title.AddCSSClass("artist-heading")
+			title.RemoveCSSClass("track-title")
+			meta.SetText("")
 			it.SetSelectable(false)
 			it.SetActivatable(false)
-		} else {
-			lbl.SetText(a.view[r.idx].Title)
-			lbl.AddCSSClass("track-row")
-			lbl.RemoveCSSClass("artist-heading")
-			it.SetSelectable(true)
-			it.SetActivatable(true)
+			return
 		}
+		t := a.view[r.idx]
+		title.RemoveCSSClass("artist-heading")
+		title.AddCSSClass("track-title")
+		meta.SetText(t.Album)
+		// Playing state is explicit, never color-alone: note
+		// marker plus the selection that followPlaying drives.
+		name := t.Title
+		if t.Path == a.playingPath() && t.Path != "" {
+			name = "♪ " + name
+		}
+		title.SetText(name)
+		it.SetSelectable(true)
+		it.SetActivatable(true)
 	})
 
 	lv := gtk.NewListView(a.sel, &factory.ListItemFactory)
@@ -97,14 +120,28 @@ func (a *app) buildList() *gtk.ListView {
 		}
 	})
 	lv.AddCSSClass("tracklist")
-	// Initial selection: first track row, never a heading.
-	for r, lr := range rows {
-		if lr.kind == rowTrack {
-			a.sel.SetSelected(uint(r))
-			break
-		}
-	}
 	return lv
+}
+
+// rebindRow forces ListView to re-run bind for one track row.
+// The ♪ marker reads live playback state (not model data), so rows
+// must rebind on track change or the marker goes stale.
+func (a *app) rebindRow(path string) {
+	if path == "" {
+		return
+	}
+	for i, t := range a.view {
+		if t.Path != path {
+			continue
+		}
+		for r, lr := range a.rows {
+			if lr.kind == rowTrack && lr.idx == i {
+				a.store.Splice(uint(r), 1, []string{a.store.String(uint(r))})
+				return
+			}
+		}
+		return
+	}
 }
 
 // followPlaying moves selection to the playing track's row.

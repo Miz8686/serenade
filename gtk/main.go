@@ -41,6 +41,7 @@ type app struct {
 	playBtn  *gtk.Button
 	seek     *gtk.Scale
 	posL     *gtk.Label
+	durL     *gtk.Label
 	accent   *gtk.CSSProvider
 	scrubbed int64 // ms timestamp of last user seek; polls defer to it
 }
@@ -86,12 +87,29 @@ func (a *app) activate(app *gtk.Application) {
 	pane.SetVExpand(true)
 	root.Append(pane)
 
-	left := gtk.NewScrolledWindow()
+	left := gtk.NewBox(gtk.OrientationVertical, 0)
 	left.SetHExpand(true)
 	left.SetVExpand(true)
 	pane.SetStartChild(left)
+	appName := gtk.NewLabel("Serenade")
+	appName.SetXAlign(0)
+	appName.AddCSSClass("app-header")
+	appName.SetMarginStart(10)
+	appName.SetMarginTop(8)
+	left.Append(appName)
+	libHead := gtk.NewLabel("Library")
+	libHead.SetXAlign(0)
+	libHead.AddCSSClass("library-heading")
+	libHead.SetMarginStart(10)
+	libHead.SetMarginTop(2)
+	libHead.SetMarginBottom(4)
+	left.Append(libHead)
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetHExpand(true)
+	scroll.SetVExpand(true)
+	left.Append(scroll)
 	a.list = a.buildList()
-	left.SetChild(a.list)
+	scroll.SetChild(a.list)
 
 	right := gtk.NewBox(gtk.OrientationVertical, 8)
 	right.SetHExpand(true)
@@ -136,3 +154,5 @@ func (a *app) demo(file string) {
 func nowMs() int64 {
 	return glib.GetMonotonicTime() / 1000
 }
+
+func (a *app) playingPath() string { return a.status.File }
