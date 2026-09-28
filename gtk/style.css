@@ -1,0 +1,76 @@
+/* Serenade GTK theme — same token system as the TUI, fought for
+ * over several rounds and carried over unchanged:
+ * ink/paper base, brass primary, verdigris secondary.
+ *
+ * Ceiling rule (explicit, not relitigated): per-track accent color
+ * is allowed on ONE surface — the list selection state, injected at
+ * runtime by applyAccent — and nowhere else. Every other rule below
+ * names only the base tokens, so the identity holds no matter how
+ * loud the current cover is. */
+
+@define-color ink #161310;
+@define-color surface #2E2822;
+@define-color paper #EDE0C8;
+@define-color muted #9C8D75;
+@define-color brass #D9A44C;
+@define-color verdigris #43B3AE;
+@define-color darkfg #161310;
+
+window, .app {
+  background-color: @ink;
+  color: @paper;
+}
+
+.tracklist {
+  background-color: @ink;
+  color: @paper;
+}
+
+.tracklist row {
+  padding: 2px 10px;
+  color: @paper;
+}
+
+/* Fallback selection before any track accent arrives. The runtime
+ * override replaces the background per track; color stays dark. */
+.tracklist row:selected {
+  background-color: @brass;
+  color: @darkfg;
+}
+
+.artist-heading {
+  color: @verdigris;
+  font-weight: 800;
+  font-size: 1.05em;
+  padding: 6px 10px 0 10px;
+}
+
+.track-row {
+  color: @paper;
+}
+
+.np-artist {
+  color: @brass;
+  font-weight: 800;
+  font-size: 1.2em;
+}
+
+.np-title {
+  color: @paper;
+  font-weight: 700;
+  font-size: 1.4em;
+}
+
+.dim {
+  color: @muted;
+}
+
+.cover {
+  background-color: @surface;
+  border-radius: 4px;
+}
+
+button {
+  background-color: @surface;
+  color: @paper;
+}

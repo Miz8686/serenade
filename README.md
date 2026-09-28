@@ -20,6 +20,16 @@ One self-contained binary, no daemons, no shell-script glue.
   synced/plain lyrics under the art (embedded tags, lrclib cache),
   `~/.config/serenade/config.toml` for theme + keybinds
 
+## a-serenade-gtk (Phase 1)
+
+The same backend brain in a GTK4 body — see [`gtk/`](gtk/) for the
+Phase 1 app (library list, Now Playing, transport, seek, per-track
+selection accent). It shares this repo's backend socket, config, and
+art cache with the TUI.
+
+![GTK idle](screenshots/gtk-idle.png)
+![GTK playing](screenshots/gtk-playing.png)
+
 ## Requirements
 
 - `cmus`, `pw-cat` + `pactl` (visualizer only), a Nerd Font, truecolor terminal
