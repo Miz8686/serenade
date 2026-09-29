@@ -26,7 +26,31 @@ socket, config, and art cache.
 - Phase 3 (done): full-window blurred-art backdrop (GtkOverlay,
   scrim baked in Go with the TUI's adaptive math, one texture per
   track) + transparent panes. Contrast locked per cover.
-- Out of scope: lyrics, animation, shuffle UI, queue UI, keybinds.
+- Fixes round (done): art box border dropped so the cover emerges
+  from its own backdrop; album subtitles collapse to one per
+  contiguous run; title==album singles suppress the echo; accent
+  ceiling re-locked to selection-only (transport/seek stay brass).
+- Search (done): `GtkSearchEntry` live-filters through the same
+  `sahilm/fuzzy` engine as the TUI's `/`; clear restores all.
+- Keybinds (done): window-level `GtkEventControllerKey`,
+  config-driven via `cfg.keyIs`; case-preserving normalize keeps
+  `a`/`A` (and `g`/`G`) distinct like the TUI.
+- Queue + shuffle (done): `queue.go` ports `queueMove` /
+  `queueRemove` verbatim; shuffle stays a bag — the "Shuffle play"
+  button starts a fresh session now, the `s` key/toggle flips mode
+  only (no autostart, unlike the TUI quirk). Dialog: live ListBox
+  with Up/Down/Remove.
+- Lyrics (done): pipeline (`lyrics_pipe.go`) ported as-is —
+  embedded → cache+tombstones → one async lrclib fetch. Six-line
+  box under the album, synced follow, fixed-token highlight.
+  Terminal cell-width helpers deliberately not ported: Pango
+  shapes non-Latin scripts natively, so the TUI's Devanagari bug
+  class has no equivalent (pinned by `TestLyricsDevanagari`).
+- Animation (done, last): track-change crossfade on the art +
+  backdrop swap (~150ms out, ~180ms in, 16ms steps). A generation
+  counter invalidates stale fades — rapid skips can never land an
+  old texture or stick mid-fade (pinned by `TestFadeGen` + a
+  `ASER_DEMOSEQ` rapid-cycle capture). Viz paint path untouched.
 
 ## Deviations from the brief (flagged, not hidden)
 
