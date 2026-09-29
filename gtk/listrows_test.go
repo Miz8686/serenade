@@ -66,13 +66,18 @@ func TestAccentCSS(t *testing.T) {
 	for _, want := range []string{
 		".tracklist row:selected",
 		"background: #fd002a;",
-		".transport-btn:hover",
-		".play-primary:active",
-		".seek-row scale highlight",
-		"alpha(#fd002a, 0.22)",
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("accent CSS missing %q", want)
+		}
+	}
+	// Identity anchor (item 4): the per-track override must not
+	// leak into chrome — transport and seek stay on fixed brass.
+	for _, banned := range []string{
+		".transport-btn", ".play-primary", ".seek-row", "alpha(",
+	} {
+		if strings.Contains(css, banned) {
+			t.Fatalf("accent CSS must stay selection-only, found %q", banned)
 		}
 	}
 	if strings.Contains(css, "#D9A44C") {

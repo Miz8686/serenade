@@ -88,16 +88,14 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	seekRow.Append(a.durL)
 }
 
-// accentCSS builds the runtime override: selection surface,
-// transport hover/press, and seek fill carry the per-track prim.
-// Pure (and unit-tested) so a typo here can't silently drop a rule.
+// accentCSS builds the runtime override: selection surface ONLY.
+// Chrome (transport hover/press, seek fill) stays on the fixed
+// brass token from style.css regardless of cover art — that is the
+// identity anchor (item 4). Pure (and unit-tested) so a typo here
+// can't silently drop the rule.
 func accentCSS(prim string) string {
-	return fmt.Sprintf(`
-.tracklist row:selected { background: %s; color: %s; }
-.transport-btn:hover, .play-primary:hover { background-color: alpha(%s, 0.22); }
-.transport-btn:active, .play-primary:active { background-color: alpha(%s, 0.38); }
-.seek-row scale highlight { background-color: %s; }
-`, prim, pickText(prim), prim, prim, prim)
+	return fmt.Sprintf(`.tracklist row:selected { background: %s; color: %s; }
+`, prim, pickText(prim))
 }
 
 // pickText returns paper or ink, whichever contrasts with the
@@ -242,9 +240,6 @@ func (a *app) applyAccent(prim, sec string) {
 	// Selection surface only. Everything else stays on the base
 	// brass/verdigris/ink tokens from style.css by construction:
 	// this override names row:selected and nothing else.
-	// Dynamic accent: selection surface, transport hover/press,
-	// and seek fill — and nothing else. Base tokens in style.css
-	// never move, so the identity holds regardless of the cover.
 	// Selection text picks whichever of paper/ink contrasts with
 	// the accent (brass needs dark text, deep reds need paper).
 	a.accent.LoadFromString(accentCSS(prim))
