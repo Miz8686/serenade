@@ -102,8 +102,8 @@ scrolledwindow viewport {
 }
 
 .cover {
-  background-color: @surface;
-  border-radius: 4px;
+  background-color: transparent;
+  border-radius: 0;
 }
 
 /* Transport: flat icon buttons. Chrome appears on hover/press
