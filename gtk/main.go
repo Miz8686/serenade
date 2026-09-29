@@ -169,20 +169,28 @@ func (a *app) activate(app *gtk.Application) {
 
 	right := gtk.NewBox(gtk.OrientationVertical, 8)
 	right.SetHExpand(true)
+	right.SetVExpand(true)
 	right.SetMarginTop(12)
 	right.SetMarginBottom(12)
 	right.SetMarginStart(12)
 	right.SetMarginEnd(12)
-	// Right pane scrolls: art + lyrics + transport + viz + queue
-	// row exceed short windows otherwise, clipping the queue bar
-	// (verified live at 768px with lyrics visible). Scrollbar
-	// appears only on overflow.
+	// Explicit layout call (lyrics-vs-controls collision): the
+	// CONTENT column (art, meta, lyrics) scrolls; the CONTROL
+	// footer (transport, seek, queue, viz) is fixed and always
+	// visible. Lyrics must never silently push the viz or the
+	// queue row out of the window again.
+	upper := gtk.NewBox(gtk.OrientationVertical, 8)
+	upper.SetHExpand(true)
 	scrollR := gtk.NewScrolledWindow()
 	scrollR.SetHExpand(true)
 	scrollR.SetVExpand(true)
-	scrollR.SetChild(right)
-	pane.SetEndChild(scrollR)
-	a.buildNowPlaying(right)
+	scrollR.SetChild(upper)
+	right.Append(scrollR)
+	footer := gtk.NewBox(gtk.OrientationVertical, 0)
+	footer.SetHExpand(true)
+	right.Append(footer)
+	pane.SetEndChild(right)
+	a.buildNowPlaying(upper, footer)
 
 	a.poll()
 	glib.TimeoutAdd(700, func() bool {

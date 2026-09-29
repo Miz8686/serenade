@@ -15,39 +15,39 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-func (a *app) buildNowPlaying(right *gtk.Box) {
+func (a *app) buildNowPlaying(upper, footer *gtk.Box) {
 	a.art = gtk.NewPicture()
 	a.art.SetSizeRequest(320, 320)
 	a.art.SetMarginBottom(12)
 	a.art.AddCSSClass("cover")
-	right.Append(a.art)
+	upper.Append(a.art)
 
 	a.noArt = gtk.NewLabel("no cover art")
 	a.noArt.AddCSSClass("dim")
 	a.noArt.SetVisible(false)
-	right.Append(a.noArt)
+	upper.Append(a.noArt)
 
 	a.artistL = gtk.NewLabel("")
 	a.artistL.SetXAlign(0)
 	a.artistL.AddCSSClass("artist-subtitle")
-	right.Append(a.artistL)
+	upper.Append(a.artistL)
 
 	a.titleL = gtk.NewLabel("")
 	a.titleL.SetXAlign(0)
 	a.titleL.SetEllipsize(pango.EllipsizeEnd)
 	a.titleL.AddCSSClass("track-title-large")
-	right.Append(a.titleL)
+	upper.Append(a.titleL)
 
 	a.albumL = gtk.NewLabel("")
 	a.albumL.SetXAlign(0)
 	a.albumL.SetEllipsize(pango.EllipsizeEnd)
 	a.albumL.AddCSSClass("dim")
-	right.Append(a.albumL)
-	a.buildLyrics(right)
+	upper.Append(a.albumL)
+	a.buildLyrics(upper)
 
 	transport := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	transport.SetHAlign(gtk.AlignCenter)
-	right.Append(transport)
+	footer.Append(transport)
 	prev := gtk.NewButtonFromIconName("media-skip-backward")
 	prev.SetTooltipText("Previous track")
 	prev.AddCSSClass("transport-btn")
@@ -68,7 +68,7 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	seekRow.AddCSSClass("seek-row")
 	seekRow.SetMarginTop(8)
 	seekRow.SetMarginBottom(4)
-	right.Append(seekRow)
+	footer.Append(seekRow)
 	a.posL = gtk.NewLabel("")
 	a.posL.AddCSSClass("dim")
 	seekRow.Append(a.posL)
@@ -86,8 +86,8 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	// Phase 2 strip: below transport+seek+queue, compact by design.
 	// Queue row sits above the viz deliberately: on short windows
 	// with lyrics visible, ambient bars clip before controls do.
-	a.buildQueueBar(right)
-	a.buildViz(right)
+	a.buildQueueBar(footer)
+	a.buildViz(footer)
 	a.durL.AddCSSClass("dim")
 	seekRow.Append(a.durL)
 }
