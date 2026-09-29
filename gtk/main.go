@@ -38,6 +38,7 @@ type app struct {
 	rowWidgets    map[int]*gtk.Widget
 	search        *gtk.SearchEntry
 	shufBtn       *gtk.ToggleButton
+	shufGlyph     *gtk.DrawingArea
 	qWin          *gtk.Window
 	qList         *gtk.ListBox
 	qCursor       int

@@ -130,48 +130,38 @@ func (a *app) enqueueSelected() {
 }
 
 // buildQueueBar adds the quiet secondary row under seek: shuffle
-// toggle, shuffle-play, enqueue, queue view. Icon buttons with
-// text in tooltips — same standard as the transport row above
-// (same .transport-btn sizing, same 6px spacing, theme glyphs
-// verified in Adwaita + Papyrus). Words inline made this row
-// read a tier below every other control; finishing pass only,
-// no new visual language.
+// toggle, shuffle-play, enqueue, queue view. Serenade-drawn Cairo
+// glyphs (icons.go) with text in tooltips — same frame, sizing and
+// spacing as the transport row above, own marks throughout.
 func (a *app) buildQueueBar(parent *gtk.Box) {
 	bar := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	bar.SetHAlign(gtk.AlignCenter)
 	bar.SetMarginTop(4)
 	parent.Append(bar)
 
-	a.shufBtn = gtk.NewToggleButton()
-	a.shufBtn.SetIconName("media-playlist-shuffle")
-	a.shufBtn.SetTooltipText("Shuffle mode (s)")
-	a.shufBtn.AddCSSClass("transport-btn")
-	a.shufBtn.ConnectToggled(func() {
-		want := a.shufBtn.Active()
+	shufB, shufG := glyphToggleButton("Shuffle mode (s)", a.drawShuffle)
+	a.shufBtn, a.shufGlyph = shufB, shufG
+	shufB.ConnectToggled(func() {
+		want := shufB.Active()
 		if want != a.shuf.on {
 			a.toggleShuffle()
 		}
 		// toggleShuffle syncs back; a programmatic sync
 		// re-emitting toggled would loop, so sync only on
 		// mismatch (handled inside toggleShuffle).
+		shufG.QueueDraw()
 	})
-	bar.Append(a.shufBtn)
+	bar.Append(shufB)
 
-	shufPlay := gtk.NewButtonFromIconName("view-refresh")
-	shufPlay.SetTooltipText("Shuffle play — fresh session, starting now")
-	shufPlay.AddCSSClass("transport-btn")
+	shufPlay, _ := glyphButton("Shuffle play \u2014 fresh session, starting now", a.drawReshuffle)
 	shufPlay.ConnectClicked(func() { a.reshuffleAndPlay() })
 	bar.Append(shufPlay)
 
-	enq := gtk.NewButtonFromIconName("list-add")
-	enq.SetTooltipText("Add to queue (a)")
-	enq.AddCSSClass("transport-btn")
+	enq, _ := glyphButton("Add to queue (a)", a.drawEnqueue)
 	enq.ConnectClicked(func() { a.enqueueSelected() })
 	bar.Append(enq)
 
-	qview := gtk.NewButtonFromIconName("view-list")
-	qview.SetTooltipText("Queue (A)")
-	qview.AddCSSClass("transport-btn")
+	qview, _ := glyphButton("Queue (A)", a.drawQueueList)
 	qview.ConnectClicked(func() { a.showQueueDialog() })
 	bar.Append(qview)
 }
@@ -184,6 +174,9 @@ func (a *app) syncShuffleUI() {
 	}
 	if a.shufBtn.Active() != a.shuf.on {
 		a.shufBtn.SetActive(a.shuf.on)
+	}
+	if a.shufGlyph != nil {
+		a.shufGlyph.QueueDraw()
 	}
 }
 
