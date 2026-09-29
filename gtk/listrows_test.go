@@ -121,3 +121,28 @@ func TestAlbumLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterTracks(t *testing.T) {
+	tr := []Track{
+		{Path: "/a", Artist: "Alpha", Title: "one"},
+		{Path: "/b", Artist: "Beta", Title: "two"},
+		{Path: "/c", Artist: "Alpha", Title: "three"},
+	}
+	if got := filterTracks(tr, ""); len(got) != 3 {
+		t.Fatalf("empty query must restore all, got %d", len(got))
+	}
+	if got := filterTracks(tr, "   "); len(got) != 3 {
+		t.Fatalf("blank query must restore all, got %d", len(got))
+	}
+	got := filterTracks(tr, "alp")
+	if len(got) != 2 || got[0].Path != "/a" || got[1].Path != "/c" {
+		t.Fatalf("fuzzy artist filter wrong: %+v", got)
+	}
+	got = filterTracks(tr, "two")
+	if len(got) != 1 || got[0].Path != "/b" {
+		t.Fatalf("title filter wrong: %+v", got)
+	}
+	if got := filterTracks(tr, "zzz-no-match"); len(got) != 0 {
+		t.Fatalf("no-match must be empty, got %d", len(got))
+	}
+}

@@ -12,6 +12,8 @@ package main
 import (
 	"strings"
 
+	"github.com/sahilm/fuzzy"
+
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
@@ -150,6 +152,29 @@ func albumLabel(view []Track, rows []listRow, pos int, t Track) string {
 		break
 	}
 	return t.Album
+}
+
+// filterTracks fuzzy-filters tracks on "Artist – Title" labels,
+// same engine and behavior as the TUI's `/`. Empty query restores
+// the full library. Pure for testing.
+func filterTracks(tracks []Track, q string) []Track {
+	if strings.TrimSpace(q) == "" {
+		return tracks
+	}
+	labels := make([]string, len(tracks))
+	for i, t := range tracks {
+		if t.Artist != "" {
+			labels[i] = t.Artist + " – " + t.Title
+		} else {
+			labels[i] = t.Title
+		}
+	}
+	matches := fuzzy.Find(q, labels)
+	out := make([]Track, 0, len(matches))
+	for _, mt := range matches {
+		out = append(out, tracks[mt.Index])
+	}
+	return out
 }
 
 // rebindRow forces ListView to re-run bind for one track row.

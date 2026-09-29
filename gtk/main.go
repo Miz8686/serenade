@@ -33,6 +33,7 @@ type app struct {
 	sel       *gtk.SingleSelection
 	store     *gtk.StringList
 	rows      []listRow
+	search    *gtk.SearchEntry
 	art       *gtk.Picture
 	noArt     *gtk.Label
 	artistL   *gtk.Label
@@ -129,6 +130,13 @@ func (a *app) activate(app *gtk.Application) {
 	libHead.SetMarginTop(2)
 	libHead.SetMarginBottom(4)
 	left.Append(libHead)
+	a.search = gtk.NewSearchEntry()
+	a.search.SetPlaceholderText("Filter library")
+	a.search.SetMarginStart(10)
+	a.search.SetMarginEnd(10)
+	a.search.SetMarginBottom(6)
+	a.search.ConnectSearchChanged(func() { a.applySearch() })
+	left.Append(a.search)
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetHExpand(true)
 	scroll.SetVExpand(true)
@@ -161,6 +169,24 @@ func (a *app) activate(app *gtk.Application) {
 		return false
 	})
 	a.win.Present()
+}
+
+// applySearch live-filters the library through the same fuzzy
+// engine as the TUI, then rebuilds rows/model in place (splice
+// keeps the selection model alive). Selection lands back on the
+// playing row when still present, else the top.
+func (a *app) applySearch() {
+	if a.search == nil || a.store == nil {
+		return
+	}
+	a.view = filterTracks(a.tracks, a.search.Text())
+	rows, labels := listRows(a.view)
+	a.rows = rows
+	a.store.Splice(0, a.store.NItems(), labels)
+	a.followPlaying(a.status.File)
+	if a.status.File == "" {
+		a.sel.SetSelected(0)
+	}
 }
 
 // demo loads art/accents/selection for file and fakes a playing
