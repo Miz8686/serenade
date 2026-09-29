@@ -160,7 +160,15 @@ func (a *app) activate(app *gtk.Application) {
 	right.SetMarginBottom(12)
 	right.SetMarginStart(12)
 	right.SetMarginEnd(12)
-	pane.SetEndChild(right)
+	// Right pane scrolls: art + lyrics + transport + viz + queue
+	// row exceed short windows otherwise, clipping the queue bar
+	// (verified live at 768px with lyrics visible). Scrollbar
+	// appears only on overflow.
+	scrollR := gtk.NewScrolledWindow()
+	scrollR.SetHExpand(true)
+	scrollR.SetVExpand(true)
+	scrollR.SetChild(right)
+	pane.SetEndChild(scrollR)
 	a.buildNowPlaying(right)
 
 	a.poll()
