@@ -62,6 +62,8 @@ func (a *app) buildList() *gtk.ListView {
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(o *glib.Object) {
 		box := gtk.NewBox(gtk.OrientationVertical, 0)
+		box.AddCSSClass("library-list-item")
+		box.AddCSSClass("library-list-item")
 		title := gtk.NewLabel("")
 		title.SetXAlign(0)
 		title.SetEllipsize(pango.EllipsizeEnd)

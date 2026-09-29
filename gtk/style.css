@@ -16,6 +16,17 @@
 @define-color verdigris #43B3AE;
 @define-color darkfg #161310;
 
+/* App base: explicit ink/paper (never inherit the desktop theme
+ * for the canvas itself) + global premium typeface stack. */
+window {
+  background-color: @ink;
+  color: @paper;
+}
+
+* {
+  font-family: "Inter", "Roboto", "Cantarell", sans-serif;
+}
+
 /* Left pane header: quiet. */
 .app-header {
   color: @muted;
@@ -35,8 +46,8 @@
   color: @paper;
 }
 
-.tracklist row {
-  padding: 3px 10px;
+.library-list-item {
+  padding: 4px 10px;
 }
 
 /* Selection: tinted surface + solid accent edge + dark-on-bright
@@ -46,7 +57,7 @@
 .tracklist row:selected {
   background-color: alpha(@brass, 0.28);
   border-left: 3px solid @brass;
-  color: @paper;
+  color: @darkfg;
 }
 
 /* Artist headings: structure by weight, normal case. The teal
@@ -66,17 +77,18 @@
   font-size: 0.85em;
 }
 
-/* Now Playing: title is the loudest text in the details. */
-.np-artist {
-  color: @brass;
-  font-weight: 700;
-  font-size: 1.0em;
+/* Now Playing type: title loudest, artist quiet support. */
+.track-title-large {
+  color: @paper;
+  font-weight: 800;
+  font-size: 1.4em;
 }
 
-.np-title {
-  color: @paper;
-  font-weight: 700;
-  font-size: 1.4em;
+.artist-subtitle {
+  color: @muted;
+  font-weight: 400;
+  font-size: 1.0em;
+  letter-spacing: 0.4px;
 }
 
 .dim {
@@ -89,7 +101,27 @@
   border-radius: 4px;
 }
 
-/* Transport: native buttons, sized by role. Play is primary. */
+/* Transport: flat icon buttons. Chrome appears on hover/press
+ * only; focus outline is never suppressed. Play is primary.
+ * Hover/active tints come from the dynamic accent override;
+ * the brass values here are the pre-track fallback. */
+.transport-btn,
+.play-primary {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.transport-btn:hover,
+.play-primary:hover {
+  background-color: alpha(@brass, 0.18);
+}
+
+.transport-btn:active,
+.play-primary:active {
+  background-color: alpha(@brass, 0.35);
+}
+
 .play-primary {
   min-width: 56px;
   min-height: 40px;
@@ -100,9 +132,21 @@
   min-height: 40px;
 }
 
-/* Seek: roomy hit target, quiet trough. */
+/* Seek: roomy hit target, slim sleek trough. Fill rides the
+ * accent (brass fallback here, per-track prim in the override). */
 .seek-row scale {
   min-height: 28px;
+}
+
+.seek-row scale trough {
+  min-height: 4px;
+  border-radius: 2px;
+  background-color: @surface;
+}
+
+.seek-row scale highlight {
+  border-radius: 2px;
+  background-color: @brass;
 }
 
 .seek-row scale slider {

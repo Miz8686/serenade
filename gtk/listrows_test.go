@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestListRows(t *testing.T) {
 	view := []Track{
@@ -43,5 +46,36 @@ func TestPickNextPort(t *testing.T) {
 	}
 	if !isNaturalEnd(Status{State: "playing", File: "/a"}, Status{State: "stopped", File: "/a"}) {
 		t.Fatalf("natural end not detected")
+	}
+}
+
+func TestPickText(t *testing.T) {
+	if pickText("#D9A44C") != "#161310" {
+		t.Fatalf("brass needs dark text")
+	}
+	if pickText("#7a1f1f") != "#EDE0C8" {
+		t.Fatalf("deep red needs paper text")
+	}
+	if pickText("#161310") != "#EDE0C8" {
+		t.Fatalf("ink needs paper text")
+	}
+}
+
+func TestAccentCSS(t *testing.T) {
+	css := accentCSS("#fd002a")
+	for _, want := range []string{
+		".tracklist row:selected",
+		"background: #fd002a;",
+		".transport-btn:hover",
+		".play-primary:active",
+		".seek-row scale highlight",
+		"alpha(#fd002a, 0.22)",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("accent CSS missing %q", want)
+		}
+	}
+	if strings.Contains(css, "#D9A44C") {
+		t.Fatalf("override must not hardcode brand")
 	}
 }
