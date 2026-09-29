@@ -129,16 +129,21 @@ func (a *app) enqueueSelected() {
 	a.refreshQueueDialog()
 }
 
-// buildQueueBar adds the quiet queue/shuffle row under the seek
-// strip: shuffle toggle, shuffle-play button, enqueue button,
-// queue view button. Flat styling matches the transport row.
+// buildQueueBar adds the quiet secondary row under seek: shuffle
+// toggle, shuffle-play, enqueue, queue view. Icon buttons with
+// text in tooltips — same standard as the transport row above
+// (same .transport-btn sizing, same 6px spacing, theme glyphs
+// verified in Adwaita + Papyrus). Words inline made this row
+// read a tier below every other control; finishing pass only,
+// no new visual language.
 func (a *app) buildQueueBar(parent *gtk.Box) {
 	bar := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	bar.SetHAlign(gtk.AlignCenter)
 	bar.SetMarginTop(4)
 	parent.Append(bar)
 
-	a.shufBtn = gtk.NewToggleButtonWithLabel("Shuffle")
+	a.shufBtn = gtk.NewToggleButton()
+	a.shufBtn.SetIconName("media-playlist-shuffle")
 	a.shufBtn.SetTooltipText("Shuffle mode (s)")
 	a.shufBtn.AddCSSClass("transport-btn")
 	a.shufBtn.ConnectToggled(func() {
@@ -152,20 +157,20 @@ func (a *app) buildQueueBar(parent *gtk.Box) {
 	})
 	bar.Append(a.shufBtn)
 
-	shufPlay := gtk.NewButtonWithLabel("Shuffle play")
-	shufPlay.SetTooltipText("Fresh shuffled session, starting now")
+	shufPlay := gtk.NewButtonFromIconName("view-refresh")
+	shufPlay.SetTooltipText("Shuffle play — fresh session, starting now")
 	shufPlay.AddCSSClass("transport-btn")
 	shufPlay.ConnectClicked(func() { a.reshuffleAndPlay() })
 	bar.Append(shufPlay)
 
-	enq := gtk.NewButtonWithLabel("Add to queue")
-	enq.SetTooltipText("Queue selected track (a)")
+	enq := gtk.NewButtonFromIconName("list-add")
+	enq.SetTooltipText("Add to queue (a)")
 	enq.AddCSSClass("transport-btn")
 	enq.ConnectClicked(func() { a.enqueueSelected() })
 	bar.Append(enq)
 
-	qview := gtk.NewButtonWithLabel("Queue")
-	qview.SetTooltipText("View / reorder queue (A)")
+	qview := gtk.NewButtonFromIconName("view-list")
+	qview.SetTooltipText("Queue (A)")
 	qview.AddCSSClass("transport-btn")
 	qview.ConnectClicked(func() { a.showQueueDialog() })
 	bar.Append(qview)
