@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -194,6 +195,7 @@ func (a *app) loadArt(path string) {
 		a.noArt.SetVisible(true)
 		a.artPrim, a.artSec = "", ""
 		a.applyAccent("", "")
+		a.setBackdrop(nil)
 		return
 	}
 	a.noArt.SetVisible(false)
@@ -205,6 +207,29 @@ func (a *app) loadArt(path string) {
 		}
 	}
 	a.applyAccent(prim, sec)
+	a.setBackdrop(img)
+}
+
+// setBackdrop builds the Phase 3 atmosphere exactly once per track:
+// downscale (the blur — GPU upscaling smooths it for free), adaptive
+// scrim baked in (same floors as the TUI contrast suite), one texture
+// held until the next track. Replacing bgTex drops the old reference;
+// gotk4 finalizers reap the GL side. Nil clears back to ink.
+func (a *app) setBackdrop(img image.Image) {
+	if img == nil {
+		a.bgTex = nil
+		a.bgPic.SetPaintable(nil)
+		return
+	}
+	bg := scrimAdaptive(smallBlur(toRGBA(img)), a.cfg.Theme.Bg)
+	var buf bytes.Buffer
+	if err := encodePNG(&buf, bg); err != nil {
+		return
+	}
+	if tex, err := gdk.NewTextureFromBytes(glib.NewBytes(buf.Bytes())); err == nil {
+		a.bgTex = tex
+		a.bgPic.SetPaintable(tex)
+	}
 }
 
 func (a *app) applyAccent(prim, sec string) {

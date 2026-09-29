@@ -42,6 +42,8 @@ type app struct {
 	seek      *gtk.Scale
 	posL      *gtk.Label
 	durL      *gtk.Label
+	bgPic     *gtk.Picture
+	bgTex     *gdk.Texture
 	tap       *vizTap
 	viz       *gtk.DrawingArea
 	vizW      int
@@ -89,8 +91,21 @@ func (a *app) activate(app *gtk.Application) {
 	a.win.SetTitle("Serenade")
 	a.win.SetDefaultSize(1100, 700)
 
+	// Phase 3 layering: blurred-art picture at the bottom, full UI
+	// as the overlay child on top. The picture is never interactive
+	// (no controllers), so all input falls through to the UI by
+	// construction — no pass-through API needed. Scrim is baked
+	// into the texture in Go (same adaptive math as the TUI),
+	// never a second live layer.
+	a.bgPic = gtk.NewPicture()
+	a.bgPic.SetContentFit(gtk.ContentFitCover)
+	a.bgPic.SetHExpand(true)
+	a.bgPic.SetVExpand(true)
+	overlay := gtk.NewOverlay()
+	overlay.SetChild(a.bgPic)
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
-	a.win.SetChild(root)
+	overlay.AddOverlay(root)
+	a.win.SetChild(overlay)
 
 	pane := gtk.NewPaned(gtk.OrientationHorizontal)
 	pane.SetPosition(620)

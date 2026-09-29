@@ -41,8 +41,13 @@ window {
 }
 
 /* Library list. */
-.tracklist {
-  background-color: @ink;
+/* Phase 3: panes go transparent so the baked backdrop shows
+ * through. Text tokens unchanged — contrast against the scrimmed
+ * art is verified per-track by the contrast test, not eyeballed. */
+.tracklist,
+.tracklist viewport,
+scrolledwindow viewport {
+  background-color: transparent;
   color: @paper;
 }
 

@@ -20,8 +20,13 @@ socket, config, and art cache.
   playback: select, play, pause, next/prev, seek.
 - Per-track accent drives the list selection state ONLY
   (see `applyAccent` + the ceiling comment in `style.css`).
-- Out of scope: blur, lyrics, visualizer, animation, shuffle UI,
-  queue UI, keybinds.
+- Phase 2 (done): Cairo spectrum strip on the ported
+  PipeWire/FFT tap — plays only while playing+focused, idle
+  baseline otherwise, tap strictly restarted per track.
+- Phase 3 (done): full-window blurred-art backdrop (GtkOverlay,
+  scrim baked in Go with the TUI's adaptive math, one texture per
+  track) + transparent panes. Contrast locked per cover.
+- Out of scope: lyrics, animation, shuffle UI, queue UI, keybinds.
 
 ## Deviations from the brief (flagged, not hidden)
 
