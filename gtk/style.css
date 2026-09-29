@@ -150,8 +150,18 @@ scrolledwindow viewport {
   min-height: 40px;
 }
 
-/* Seek: roomy hit target, slim sleek trough. Fill rides the
- * accent (brass fallback here, per-track prim in the override). */
+.seek-row scale slider {
+  min-width: 12px;
+  min-height: 12px;
+  border-radius: 6px;
+  background-color: @brass;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* Seek: roomy hit target, slim sleek trough. Fill stays brass —
+ * the per-track override names row:selected and nothing else. */
 .seek-row scale {
   min-height: 28px;
 }
