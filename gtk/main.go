@@ -29,49 +29,50 @@ type app struct {
 	prev   Status
 	beErr  string
 
-	win        *gtk.ApplicationWindow
-	list       *gtk.ListView
-	sel        *gtk.SingleSelection
-	store      *gtk.StringList
-	rows       []listRow
-	listScroll *gtk.ScrolledWindow
-	rowWidgets map[int]*gtk.Widget
-	search     *gtk.SearchEntry
-	shufBtn    *gtk.ToggleButton
-	qWin       *gtk.Window
-	qList      *gtk.ListBox
-	qCursor    int
-	lyrFile    string
-	lyrLines   []lyricLine
-	lyrSynced  bool
-	lyrFlight  string // in-flight async fetch path; guards double fetch
-	lyrBox     *gtk.Box
-	lyrLabels  []*gtk.Label
-	demoHold   bool    // demo state pins while backend is empty (screenshots)
-	fGen       fadeGen // crossfade generation; rapid skips invalidate stale fades
-	art        *gtk.Picture
-	noArt      *gtk.Label
-	artistL    *gtk.Label
-	titleL     *gtk.Label
-	albumL     *gtk.Label
-	playBtn    *gtk.Button
-	seek       *gtk.Scale
-	posL       *gtk.Label
-	durL       *gtk.Label
-	bgPic      *gtk.Picture
-	bgTex      *gdk.Texture
-	tap        *vizTap
-	viz        *gtk.DrawingArea
-	vizW       int
-	levels     []float64
-	peaks      []float64
-	vizActive  bool
-	vizErr     string
-	vizTick    glib.SourceHandle
-	artPrim    string
-	artSec     string
-	accent     *gtk.CSSProvider
-	scrubbed   int64 // ms timestamp of last user seek; polls defer to it
+	win           *gtk.ApplicationWindow
+	list          *gtk.ListView
+	sel           *gtk.SingleSelection
+	store         *gtk.StringList
+	rows          []listRow
+	listScroll    *gtk.ScrolledWindow
+	rowWidgets    map[int]*gtk.Widget
+	search        *gtk.SearchEntry
+	shufBtn       *gtk.ToggleButton
+	qWin          *gtk.Window
+	qList         *gtk.ListBox
+	qCursor       int
+	lyrFile       string
+	lyrLines      []lyricLine
+	lyrSynced     bool
+	lyrFlight     string // in-flight async fetch path; guards double fetch
+	lyrBox        *gtk.Box
+	lyrLabels     []*gtk.Label
+	contentScroll *gtk.ScrolledWindow // Now Playing content viewport (fit math)
+	demoHold      bool                // demo state pins while backend is empty (screenshots)
+	fGen          fadeGen             // crossfade generation; rapid skips invalidate stale fades
+	art           *gtk.Picture
+	noArt         *gtk.Label
+	artistL       *gtk.Label
+	titleL        *gtk.Label
+	albumL        *gtk.Label
+	playBtn       *gtk.Button
+	seek          *gtk.Scale
+	posL          *gtk.Label
+	durL          *gtk.Label
+	bgPic         *gtk.Picture
+	bgTex         *gdk.Texture
+	tap           *vizTap
+	viz           *gtk.DrawingArea
+	vizW          int
+	levels        []float64
+	peaks         []float64
+	vizActive     bool
+	vizErr        string
+	vizTick       glib.SourceHandle
+	artPrim       string
+	artSec        string
+	accent        *gtk.CSSProvider
+	scrubbed      int64 // ms timestamp of last user seek; polls defer to it
 }
 
 func main() {
@@ -185,6 +186,7 @@ func (a *app) activate(app *gtk.Application) {
 	scrollR.SetHExpand(true)
 	scrollR.SetVExpand(true)
 	scrollR.SetChild(upper)
+	a.contentScroll = scrollR
 	right.Append(scrollR)
 	footer := gtk.NewBox(gtk.OrientationVertical, 0)
 	footer.SetHExpand(true)

@@ -23,7 +23,10 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-// lyrHeight is the fixed lyric box size: compact, art stays owner.
+// lyrHeight is the lyric box ceiling: compact, art stays owner.
+// The VISIBLE count is dynamic (lyricFit fills exactly the content
+// column's leftover, TUI-fill parity), so lyrics can never push
+// siblings out nor hide behind the inner scroll.
 const lyrHeight = 6
 
 // buildLyrics creates the fixed lyric box. Called once from the
@@ -44,6 +47,51 @@ func (a *app) buildLyrics(parent *gtk.Box) {
 		a.lyrLabels = append(a.lyrLabels, l)
 	}
 	a.lyrBox.SetVisible(false)
+}
+
+// lyricFit returns how many lyric rows fit the content column's
+// leftover: viewport minus art, meta and padding, over row height.
+// Measured off live allocations every update, so resizes and track
+// changes re-fit for free. Anything unmeasured yet (pre-map zeros)
+// falls back to the full ceiling — the box may briefly overflow
+// into the safety scroll on first paint, then converges.
+func (a *app) lyricFit() int {
+	rowH := 0
+	if len(a.lyrLabels) > 0 && a.lyrLabels[0] != nil {
+		rowH = a.lyrLabels[0].AllocatedHeight()
+	}
+	if rowH <= 0 {
+		rowH = 24
+	}
+	artH, metaH := 332, 80
+	if a.art != nil && a.art.AllocatedHeight() > 0 {
+		artH = a.art.AllocatedHeight() + 12
+	}
+	mh := 0
+	for _, l := range []*gtk.Label{a.artistL, a.titleL, a.albumL} {
+		if l != nil && l.AllocatedHeight() > 0 {
+			mh += l.AllocatedHeight()
+		}
+	}
+	if mh > 0 {
+		metaH = mh
+	}
+	if a.contentScroll == nil {
+		return lyrHeight
+	}
+	scrollH := a.contentScroll.AllocatedHeight()
+	if scrollH <= 0 {
+		return lyrHeight
+	}
+	avail := scrollH - artH - metaH - 16
+	n := avail / rowH
+	if n < 0 {
+		n = 0
+	}
+	if n > lyrHeight {
+		n = lyrHeight
+	}
+	return n
 }
 
 // resolveLyrics mirrors the TUI's loadLyrics precedence for file:
@@ -135,13 +183,21 @@ func (a *app) updateLyrics() {
 		frac = float64(a.status.Position) / float64(a.status.Duration)
 	}
 	from, to := lyricWindow(a.lyrLines, a.lyrSynced, pos, frac, lyrHeight)
+	n := a.lyricFit()
+	if n == 0 {
+		a.lyrBox.SetVisible(false)
+		return
+	}
+	if to-from > n {
+		to = from + n
+	}
 	cur := -1
 	if a.lyrSynced {
 		cur = currentLyric(a.lyrLines, pos)
 	}
 	for i, l := range a.lyrLabels {
 		li := from + i
-		if li >= to {
+		if i >= n || li >= to {
 			l.SetText("")
 			l.RemoveCSSClass("lyric-current")
 			continue
