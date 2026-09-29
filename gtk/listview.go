@@ -63,7 +63,6 @@ func (a *app) buildList() *gtk.ListView {
 	factory.ConnectSetup(func(o *glib.Object) {
 		box := gtk.NewBox(gtk.OrientationVertical, 0)
 		box.AddCSSClass("library-list-item")
-		box.AddCSSClass("library-list-item")
 		title := gtk.NewLabel("")
 		title.SetXAlign(0)
 		title.SetEllipsize(pango.EllipsizeEnd)
@@ -101,7 +100,7 @@ func (a *app) buildList() *gtk.ListView {
 		t := a.view[r.idx]
 		title.RemoveCSSClass("artist-heading")
 		title.AddCSSClass("track-title")
-		meta.SetText(t.Album)
+		meta.SetText(albumLabel(a.view, a.rows, pos, t))
 		// Playing state is explicit, never color-alone: note
 		// marker plus the selection that followPlaying drives.
 		name := t.Title
@@ -123,6 +122,34 @@ func (a *app) buildList() *gtk.ListView {
 	})
 	lv.AddCSSClass("tracklist")
 	return lv
+}
+
+// albumLabel resolves the second-line metadata for a track row:
+// the album name shown once per contiguous (artist, album) run and
+// suppressed for repeats, and suppressed entirely when it merely
+// echoes the title (the singles case). Pure for testing.
+func albumLabel(view []Track, rows []listRow, pos int, t Track) string {
+	al := strings.TrimSpace(t.Album)
+	if al == "" {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(t.Title), al) {
+		return ""
+	}
+	for p := pos - 1; p >= 0; p-- {
+		if rows[p].kind != rowTrack {
+			continue
+		}
+		pt := view[rows[p].idx]
+		if strings.ToLower(pt.Artist) != strings.ToLower(t.Artist) {
+			break
+		}
+		if pt.Album == t.Album {
+			return ""
+		}
+		break
+	}
+	return t.Album
 }
 
 // rebindRow forces ListView to re-run bind for one track row.

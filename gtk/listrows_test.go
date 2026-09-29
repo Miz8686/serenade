@@ -79,3 +79,40 @@ func TestAccentCSS(t *testing.T) {
 		t.Fatalf("override must not hardcode brand")
 	}
 }
+
+func TestAlbumLabel(t *testing.T) {
+	mk := func() ([]Track, []listRow) {
+		view := []Track{
+			{Path: "/a1", Artist: "Alpha", Album: "One", Title: "t1"},
+			{Path: "/a2", Artist: "Alpha", Album: "One", Title: "t2"},
+			{Path: "/a3", Artist: "Alpha", Album: "Two", Title: "t3"},
+			{Path: "/s1", Artist: "Solo", Album: "Solo", Title: "Solo"},
+			{Path: "/b1", Artist: "Beta", Album: "", Title: "t4"},
+		}
+		rows, _ := listRows(view)
+		return view, rows
+	}
+	view, rows := mk()
+	// rows: H(a1) T(a1) T(a2) T(a3) H(s1) T(s1) H(b1) T(b1)
+	byIdx := map[int]int{}
+	for pos, r := range rows {
+		if r.kind == rowTrack {
+			byIdx[r.idx] = pos
+		}
+	}
+	cases := []struct {
+		idx  int
+		want string
+	}{
+		{0, "One"}, // first of run
+		{1, ""},    // repeat suppressed
+		{2, "Two"}, // new album in run
+		{3, ""},    // title==album (singles case)
+		{4, ""},    // empty album
+	}
+	for _, c := range cases {
+		if got := albumLabel(view, rows, byIdx[c.idx], view[c.idx]); got != c.want {
+			t.Fatalf("idx %d: got %q want %q", c.idx, got, c.want)
+		}
+	}
+}
