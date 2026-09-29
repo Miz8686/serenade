@@ -29,46 +29,48 @@ type app struct {
 	prev   Status
 	beErr  string
 
-	win       *gtk.ApplicationWindow
-	list      *gtk.ListView
-	sel       *gtk.SingleSelection
-	store     *gtk.StringList
-	rows      []listRow
-	search    *gtk.SearchEntry
-	shufBtn   *gtk.ToggleButton
-	qWin      *gtk.Window
-	qList     *gtk.ListBox
-	qCursor   int
-	lyrFile   string
-	lyrLines  []lyricLine
-	lyrSynced bool
-	lyrFlight string // in-flight async fetch path; guards double fetch
-	lyrBox    *gtk.Box
-	lyrLabels []*gtk.Label
-	fGen      fadeGen // crossfade generation; rapid skips invalidate stale fades
-	art       *gtk.Picture
-	noArt     *gtk.Label
-	artistL   *gtk.Label
-	titleL    *gtk.Label
-	albumL    *gtk.Label
-	playBtn   *gtk.Button
-	seek      *gtk.Scale
-	posL      *gtk.Label
-	durL      *gtk.Label
-	bgPic     *gtk.Picture
-	bgTex     *gdk.Texture
-	tap       *vizTap
-	viz       *gtk.DrawingArea
-	vizW      int
-	levels    []float64
-	peaks     []float64
-	vizActive bool
-	vizErr    string
-	vizTick   glib.SourceHandle
-	artPrim   string
-	artSec    string
-	accent    *gtk.CSSProvider
-	scrubbed  int64 // ms timestamp of last user seek; polls defer to it
+	win        *gtk.ApplicationWindow
+	list       *gtk.ListView
+	sel        *gtk.SingleSelection
+	store      *gtk.StringList
+	rows       []listRow
+	listScroll *gtk.ScrolledWindow
+	rowWidgets map[int]*gtk.Widget
+	search     *gtk.SearchEntry
+	shufBtn    *gtk.ToggleButton
+	qWin       *gtk.Window
+	qList      *gtk.ListBox
+	qCursor    int
+	lyrFile    string
+	lyrLines   []lyricLine
+	lyrSynced  bool
+	lyrFlight  string // in-flight async fetch path; guards double fetch
+	lyrBox     *gtk.Box
+	lyrLabels  []*gtk.Label
+	fGen       fadeGen // crossfade generation; rapid skips invalidate stale fades
+	art        *gtk.Picture
+	noArt      *gtk.Label
+	artistL    *gtk.Label
+	titleL     *gtk.Label
+	albumL     *gtk.Label
+	playBtn    *gtk.Button
+	seek       *gtk.Scale
+	posL       *gtk.Label
+	durL       *gtk.Label
+	bgPic      *gtk.Picture
+	bgTex      *gdk.Texture
+	tap        *vizTap
+	viz        *gtk.DrawingArea
+	vizW       int
+	levels     []float64
+	peaks      []float64
+	vizActive  bool
+	vizErr     string
+	vizTick    glib.SourceHandle
+	artPrim    string
+	artSec     string
+	accent     *gtk.CSSProvider
+	scrubbed   int64 // ms timestamp of last user seek; polls defer to it
 }
 
 func main() {
@@ -153,6 +155,7 @@ func (a *app) activate(app *gtk.Application) {
 	scroll.SetHExpand(true)
 	scroll.SetVExpand(true)
 	left.Append(scroll)
+	a.listScroll = scroll
 	a.list = a.buildList()
 	scroll.SetChild(a.list)
 
@@ -228,6 +231,7 @@ func (a *app) applySearch() {
 	a.view = filterTracks(a.tracks, a.search.Text())
 	rows, labels := listRows(a.view)
 	a.rows = rows
+	a.rowWidgets = map[int]*gtk.Widget{}
 	a.store.Splice(0, a.store.NItems(), labels)
 	a.followPlaying(a.status.File)
 	if a.status.File == "" {

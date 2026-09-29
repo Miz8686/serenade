@@ -15,6 +15,7 @@ import (
 	"github.com/sahilm/fuzzy"
 
 	"github.com/diamondburned/gotk4/pkg/core/glib"
+	glib2 "github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
@@ -57,6 +58,7 @@ func listRows(view []Track) ([]listRow, []string) {
 func (a *app) buildList() *gtk.ListView {
 	rows, labels := listRows(a.view)
 	a.rows = rows
+	a.rowWidgets = map[int]*gtk.Widget{}
 	a.store = gtk.NewStringList(labels)
 	a.sel = gtk.NewSingleSelection(a.store)
 	a.sel.SetCanUnselect(false)
@@ -85,6 +87,22 @@ func (a *app) buildList() *gtk.ListView {
 		}
 		r := a.rows[pos]
 		box := it.Child().(*gtk.Box)
+		// Track the live widget per model row so centerRow can
+		// measure the playing row's pixel position. Updated on
+		// every bind; entries pointing at this same (recycled)
+		// widget are dropped first, so a stale row never keeps
+		// a widget that now displays another position. Cleared
+		// on model rebuilds (buildList, applySearch).
+		if a.rowWidgets == nil {
+			a.rowWidgets = map[int]*gtk.Widget{}
+		}
+		w := &box.Widget
+		for p, old := range a.rowWidgets {
+			if old == w {
+				delete(a.rowWidgets, p)
+			}
+		}
+		a.rowWidgets[pos] = w
 		title := box.FirstChild().(*gtk.Label)
 		meta := title.NextSibling().(*gtk.Label)
 		if r.kind == rowArtist {
@@ -177,42 +195,100 @@ func filterTracks(tracks []Track, q string) []Track {
 	return out
 }
 
+// rowForPath is the ONE mapping from a track file to its row in
+// the composite model (headings included). Every trigger path —
+// manual selection, auto-advance, next, prev — funnels through
+// it via followPlaying (and rebindRow for marker refresh), so
+// there is exactly one index space and no per-trigger arithmetic
+// left to drift. Returns -1 when the file isn't in the view
+// (filtered out, empty). Pure for testing.
+func rowForPath(view []Track, rows []listRow, path string) int {
+	if path == "" {
+		return -1
+	}
+	for i, t := range view {
+		if t.Path != path {
+			continue
+		}
+		for r, lr := range rows {
+			if lr.kind == rowTrack && lr.idx == i {
+				return r
+			}
+		}
+		return -1
+	}
+	return -1
+}
+
 // rebindRow forces ListView to re-run bind for one track row.
 // The ♪ marker reads live playback state (not model data), so rows
 // must rebind on track change or the marker goes stale.
 func (a *app) rebindRow(path string) {
-	if path == "" {
-		return
-	}
-	for i, t := range a.view {
-		if t.Path != path {
-			continue
-		}
-		for r, lr := range a.rows {
-			if lr.kind == rowTrack && lr.idx == i {
-				a.store.Splice(uint(r), 1, []string{a.store.String(uint(r))})
-				return
-			}
-		}
-		return
+	if r := rowForPath(a.view, a.rows, path); r >= 0 {
+		a.store.Splice(uint(r), 1, []string{a.store.String(uint(r))})
 	}
 }
 
-// followPlaying moves selection to the playing track's row.
+// followPlaying moves selection to the playing track's row and
+// centers it in the viewport — same deterministic landing the TUI
+// gets from offset = i - vis/2, for every trigger alike. GTK's
+// bare ScrollTo only reveals with minimal travel (playing row
+// docks wherever the scroll direction leaves it: top edge coming
+// from above, bottom edge from below), which is exactly the
+// "opposite wrong ends" symptom. So: reveal first (correct even
+// if centering misses), then center on idle after layout.
 func (a *app) followPlaying(path string) {
-	if path == "" {
+	r := rowForPath(a.view, a.rows, path)
+	if r < 0 {
 		return
 	}
-	for i, t := range a.view {
-		if t.Path == path {
-			for r, lr := range a.rows {
-				if lr.kind == rowTrack && lr.idx == i {
-					a.sel.SetSelected(uint(r))
-					a.list.ScrollTo(uint(r), gtk.ListScrollNone, nil)
-					return
-				}
-			}
-			return
-		}
+	a.sel.SetSelected(uint(r))
+	a.list.ScrollTo(uint(r), gtk.ListScrollNone, nil)
+	a.centerRow(path, r)
+}
+
+// centerRow scrolls the list's viewport so model row r sits
+// mid-window. Runs on idle (post-layout, so the row widget freshly
+// bound by the reveal above is measured, never a recycled stale
+// one) and applies only if path is still current — a rapid skip in
+// between aborts the stale centering instead of yanking the view.
+// Up to three idle passes: the first may run before the reveal's
+// layout rebinds the target row.
+func (a *app) centerRow(path string, r int) {
+	if a.listScroll == nil {
+		return
 	}
+	tries := 0
+	var attempt func() bool
+	attempt = func() bool {
+		if a.status.File != path || a.listScroll == nil {
+			return false
+		}
+		w, ok := a.rowWidgets[r]
+		if !ok || w == nil {
+			tries++
+			if tries < 3 {
+				glib2.IdleAdd(attempt)
+			}
+			return false
+		}
+		_, wy, ok := w.TranslateCoordinates(&a.list.ListBase.Widget, 0, 0)
+		if !ok {
+			return false
+		}
+		adj := a.listScroll.VAdjustment()
+		page := adj.PageSize()
+		if page <= 0 {
+			return false
+		}
+		// wy is viewport-relative (GtkListView positions children
+		// in view space — verified live: the same widget measured
+		// 612 while the adjustment sat at 7482), so the
+		// content-space row center is v0 + wy + h/2.
+		target := adj.Value() + wy + float64(w.AllocatedHeight())/2 - page/2
+		target = min(max(target, adj.Lower()), max(adj.Lower(), adj.Upper()-page))
+		adj.SetValue(target)
+		return false
+	}
+	glib2.IdleAdd(attempt)
 }
