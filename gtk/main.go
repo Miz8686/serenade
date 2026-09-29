@@ -28,22 +28,32 @@ type app struct {
 	prev   Status
 	beErr  string
 
-	win      *gtk.ApplicationWindow
-	list     *gtk.ListView
-	sel      *gtk.SingleSelection
-	store    *gtk.StringList
-	rows     []listRow
-	art      *gtk.Picture
-	noArt    *gtk.Label
-	artistL  *gtk.Label
-	titleL   *gtk.Label
-	albumL   *gtk.Label
-	playBtn  *gtk.Button
-	seek     *gtk.Scale
-	posL     *gtk.Label
-	durL     *gtk.Label
-	accent   *gtk.CSSProvider
-	scrubbed int64 // ms timestamp of last user seek; polls defer to it
+	win       *gtk.ApplicationWindow
+	list      *gtk.ListView
+	sel       *gtk.SingleSelection
+	store     *gtk.StringList
+	rows      []listRow
+	art       *gtk.Picture
+	noArt     *gtk.Label
+	artistL   *gtk.Label
+	titleL    *gtk.Label
+	albumL    *gtk.Label
+	playBtn   *gtk.Button
+	seek      *gtk.Scale
+	posL      *gtk.Label
+	durL      *gtk.Label
+	tap       *vizTap
+	viz       *gtk.DrawingArea
+	vizW      int
+	levels    []float64
+	peaks     []float64
+	vizActive bool
+	vizErr    string
+	vizTick   glib.SourceHandle
+	artPrim   string
+	artSec    string
+	accent    *gtk.CSSProvider
+	scrubbed  int64 // ms timestamp of last user seek; polls defer to it
 }
 
 func main() {
@@ -61,7 +71,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	a := &app{be: be, cfg: cfg, tracks: tracks, view: tracks}
+	a := &app{be: be, cfg: cfg, tracks: tracks, view: tracks, tap: &vizTap{}}
 	gtkApp := gtk.NewApplication("org.serenade.gtk", gio.ApplicationFlagsNone)
 	gtkApp.ConnectActivate(func() { a.activate(gtkApp) })
 	os.Exit(gtkApp.Run(nil))
@@ -131,6 +141,10 @@ func (a *app) activate(app *gtk.Application) {
 	if demo := os.Getenv("ASER_DEMO"); demo != "" {
 		a.demo(demo)
 	}
+	a.win.ConnectCloseRequest(func() bool {
+		a.stopViz()
+		return false
+	})
 	a.win.Present()
 }
 
@@ -147,6 +161,19 @@ func (a *app) demo(file string) {
 		Title: tr.Title, Album: tr.Album, Duration: 184, Position: 61}
 	a.loadArt(file)
 	a.followPlaying(file)
+	// ASER_DEMOLEVELS=1 seeds a synthetic spectrum so screenshots
+	// can show the Cairo bars where headless sessions have no
+	// audio. Display path only; the FFT engine is unit-tested.
+	if os.Getenv("ASER_DEMOLEVELS") != "" {
+		n := 32
+		a.vizActive = true
+		a.levels = make([]float64, n)
+		a.peaks = make([]float64, n)
+		for i := range a.levels {
+			a.levels[i] = 0.25 + 0.65*float64((i*37+11)%10)/10.0
+			a.peaks[i] = a.levels[i] + 0.08
+		}
+	}
 	a.refresh()
 }
 

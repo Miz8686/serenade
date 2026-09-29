@@ -81,6 +81,8 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	})
 	seekRow.Append(a.seek)
 	a.durL = gtk.NewLabel("")
+	// Phase 2 strip: below transport+seek, compact by design.
+	a.buildViz(right)
 	a.durL.AddCSSClass("dim")
 	seekRow.Append(a.durL)
 }
@@ -143,7 +145,9 @@ func (a *app) poll() {
 		a.followPlaying(st.File)
 		a.rebindRow(oldFile)
 		a.rebindRow(st.File)
+		a.restartTap()
 	}
+	a.ensureViz()
 	a.refresh()
 }
 
@@ -188,10 +192,12 @@ func (a *app) loadArt(path string) {
 	if err != nil || img == nil {
 		a.art.SetPaintable(nil)
 		a.noArt.SetVisible(true)
+		a.artPrim, a.artSec = "", ""
 		a.applyAccent("", "")
 		return
 	}
 	a.noArt.SetVisible(false)
+	a.artPrim, a.artSec = prim, sec
 	var buf bytes.Buffer
 	if err := encodePNG(&buf, img); err == nil {
 		if tex, err := gdk.NewTextureFromBytes(glib.NewBytes(buf.Bytes())); err == nil {
