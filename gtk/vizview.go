@@ -149,6 +149,11 @@ func (a *app) ensureViz() {
 		return
 	}
 	if !a.wantViz() && a.vizActive {
+		// Demo owns its seeded display state (no tick, no tap);
+		// the idle teardown must not clear it every poll.
+		if a.demoHold {
+			return
+		}
 		a.stopViz()
 	}
 }

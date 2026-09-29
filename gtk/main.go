@@ -285,6 +285,15 @@ func (a *app) demo(file string) {
 			a.levels[i] = 0.25 + 0.65*float64((i*37+11)%10)/10.0
 			a.peaks[i] = a.levels[i] + 0.08
 		}
+		// Re-queue after mapping: the first draw can land on a
+		// zero-width allocation (paints nothing) with no tick to
+		// follow it in demo mode.
+		glib.TimeoutAdd(1500, func() bool {
+			if a.viz != nil {
+				a.viz.QueueDraw()
+			}
+			return false
+		})
 	}
 	a.refresh()
 }
