@@ -168,6 +168,7 @@ func (a *app) activate(app *gtk.Application) {
 		a.stopViz()
 		return false
 	})
+	a.attachKeys()
 	a.win.Present()
 }
 
