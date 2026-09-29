@@ -106,10 +106,23 @@ scrolledwindow viewport {
   border-radius: 0;
 }
 
+/* Lyrics box: fixed 6 lines under the album. Lines are muted;
+ * the sounding line is paper-bold. Fixed tokens only — never
+ * the per-track accent (identity ceiling, item 4). */
+.lyric-line {
+  color: @muted;
+  font-size: 0.9em;
+}
+
+.lyric-current {
+  color: @paper;
+  font-weight: 700;
+}
+
 /* Transport: flat icon buttons. Chrome appears on hover/press
  * only; focus outline is never suppressed. Play is primary.
- * Hover/active tints come from the dynamic accent override;
- * the brass values here are the pre-track fallback. */
+ * Hover/active tints stay on the fixed brass token below — the
+ * per-track override names row:selected and nothing else. */
 .transport-btn,
 .play-primary {
   background: transparent;

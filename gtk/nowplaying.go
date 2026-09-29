@@ -43,6 +43,7 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	a.albumL.SetEllipsize(pango.EllipsizeEnd)
 	a.albumL.AddCSSClass("dim")
 	right.Append(a.albumL)
+	a.buildLyrics(right)
 
 	transport := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	transport.SetHAlign(gtk.AlignCenter)
@@ -142,6 +143,7 @@ func (a *app) poll() {
 	a.status = st
 	if changed {
 		a.loadArt(st.File)
+		a.resolveLyrics(st.File)
 		a.followPlaying(st.File)
 		a.rebindRow(oldFile)
 		a.rebindRow(st.File)
@@ -162,6 +164,7 @@ func (a *app) refresh() {
 	a.artistL.SetText(artist)
 	a.titleL.SetText(st.Title)
 	a.albumL.SetText(st.Album)
+	a.updateLyrics()
 	a.noArt.SetVisible(st.File == "")
 	if st.State == "paused" {
 		a.playBtn.SetIconName("media-playback-pause")

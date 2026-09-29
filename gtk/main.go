@@ -38,6 +38,12 @@ type app struct {
 	qWin      *gtk.Window
 	qList     *gtk.ListBox
 	qCursor   int
+	lyrFile   string
+	lyrLines  []lyricLine
+	lyrSynced bool
+	lyrFlight string // in-flight async fetch path; guards double fetch
+	lyrBox    *gtk.Box
+	lyrLabels []*gtk.Label
 	art       *gtk.Picture
 	noArt     *gtk.Label
 	artistL   *gtk.Label
@@ -206,6 +212,7 @@ func (a *app) demo(file string) {
 	a.status = Status{State: "playing", File: file, Artist: tr.Artist,
 		Title: tr.Title, Album: tr.Album, Duration: 184, Position: 61}
 	a.loadArt(file)
+	a.resolveLyrics(file)
 	a.followPlaying(file)
 	// ASER_DEMOLEVELS=1 seeds a synthetic spectrum so screenshots
 	// can show the Cairo bars where headless sessions have no
