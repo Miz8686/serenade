@@ -83,9 +83,11 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	})
 	seekRow.Append(a.seek)
 	a.durL = gtk.NewLabel("")
-	// Phase 2 strip: below transport+seek, compact by design.
-	a.buildViz(right)
+	// Phase 2 strip: below transport+seek+queue, compact by design.
+	// Queue row sits above the viz deliberately: on short windows
+	// with lyrics visible, ambient bars clip before controls do.
 	a.buildQueueBar(right)
+	a.buildViz(right)
 	a.durL.AddCSSClass("dim")
 	seekRow.Append(a.durL)
 }
