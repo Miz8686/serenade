@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"image"
+	"image/color"
 	"os"
 	"testing"
 )
@@ -56,4 +58,35 @@ func TestBackdropContrast(t *testing.T) {
 		}
 	}
 	t.Logf("backdrop cover over %d tracks", n)
+}
+
+// TestScrimKeepsPhotoHue pins the saturation-aware scrim: neutral
+// photographic gray must darken WITHOUT taking the ink's warm cast
+// (the generic dark-mud failure), while saturated art keeps the
+// warm ink blend (atmosphere, as before).
+func TestScrimKeepsPhotoHue(t *testing.T) {
+	base := defaultConfig().Theme.Bg
+	mk := func(c color.RGBA) *image.RGBA {
+		img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+		for y := 0; y < 8; y++ {
+			for x := 0; x < 8; x++ {
+				img.SetRGBA(x, y, c)
+			}
+		}
+		return img
+	}
+	gray := scrimAdaptive(mk(color.RGBA{128, 128, 128, 255}), base)
+	r, g, b, _ := gray.RGBAAt(4, 4).RGBA()
+	fr, fg, fb := float64(r>>8), float64(g>>8), float64(b>>8)
+	if d := maxF(maxF(fr, fg), fb) - minF(minF(fr, fg), fb); d > 14 {
+		t.Fatalf("gray photo pixel went muddy warm: #%02x%02x%02x (spread %.0f)", int(fr), int(fg), int(fb), d)
+	}
+	if lum := 0.2126*fr/255 + 0.7152*fg/255 + 0.0722*fb/255; lum > 0.083 {
+		t.Fatalf("gray scrim too bright for paper text: lum %.3f", lum)
+	}
+	red := scrimAdaptive(mk(color.RGBA{220, 30, 30, 255}), base)
+	rr, rg, rb, _ := red.RGBAAt(4, 4).RGBA()
+	if float64(rr>>8) <= float64(rg>>8)+10 {
+		t.Fatalf("saturated art lost its character: #%02x%02x%02x", int(rr>>8), int(rg>>8), int(rb>>8))
+	}
 }

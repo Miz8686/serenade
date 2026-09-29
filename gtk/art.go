@@ -415,11 +415,16 @@ func smallBlur(img image.Image) *image.RGBA {
 	return out
 }
 
-// scrimAdaptive blends toward base with per-pixel strength keyed off
-// the pixel's own luminance: dark regions keep real art presence
-// (45%), bright regions collapse near the base (5%) so text clears.
-// Linear scrimToward can't do both at once — bright covers forced it
-// to choose, and text lost. opacity(lum) = clamp(0.45-0.40*lum).
+// scrimAdaptive blends toward base with strength keyed off the
+// pixel's own character: saturated pixels take the warm ink blend
+// (atmosphere — illustrated covers keep working as before), while
+// low-saturation photographic pixels take a chromaticity-preserving
+// darken instead. A flat ink blend forces every photo toward the
+// same brown-gray mud and erases tonal structure; darkening keeps
+// the photo's own hue relationships and luminance variation at a
+// legibility-safe level. Mix is smooth across saturation; the
+// darken target curve is capped so the contrast suite still holds
+// (paper needs bg lum <= ~0.08 — target peaks at 0.080).
 func scrimAdaptive(img *image.RGBA, baseHex string) *image.RGBA {
 	var br, bg, bb int
 	fmt.Sscanf(baseHex, "#%02x%02x%02x", &br, &bg, &bb)
@@ -430,6 +435,8 @@ func scrimAdaptive(img *image.RGBA, baseHex string) *image.RGBA {
 			cr, cg, cb, _ := img.RGBAAt(x, y).RGBA()
 			fr, fg, fb := float64(cr>>8)/255, float64(cg>>8)/255, float64(cb>>8)/255
 			lum := 0.2126*fr + 0.7152*fg + 0.0722*fb
+			_, sat, _ := rgbToHsv(fr, fg, fb)
+			// Ink path: the original luminance-keyed blend.
 			o := 0.45 - 0.40*lum
 			if o < 0.05 {
 				o = 0.05
@@ -437,10 +444,28 @@ func scrimAdaptive(img *image.RGBA, baseHex string) *image.RGBA {
 			if o > 0.6 {
 				o = 0.6
 			}
-			r := int(fr*255*o + float64(br)*(1-o))
-			g := int(fg*255*o + float64(bg)*(1-o))
-			bl := int(fb*255*o + float64(bb)*(1-o))
-			out.SetRGBA(x, y, color.RGBA{uint8(r), uint8(g), uint8(bl), 255})
+			ir := fr*o + float64(br)/255*(1-o)
+			ig := fg*o + float64(bg)/255*(1-o)
+			ib := fb*o + float64(bb)/255*(1-o)
+			// Photo path: scale toward a dark target, hue kept.
+			target := 0.015 + 0.065*math.Pow(maxF(lum, 1e-3), 0.7)
+			if target > 0.080 {
+				target = 0.080
+			}
+			sc := target / maxF(lum, 1e-3)
+			dr, dg, db := fr*sc, fg*sc, fb*sc
+			// Saturation decides: gray photos darken, colors ink.
+			t := (sat - 0.10) / 0.30
+			if t < 0 {
+				t = 0
+			}
+			if t > 1 {
+				t = 1
+			}
+			r := dr*(1-t) + ir*t
+			g := dg*(1-t) + ig*t
+			bl := db*(1-t) + ib*t
+			out.SetRGBA(x, y, color.RGBA{uint8(minF(r, 1) * 255), uint8(minF(g, 1) * 255), uint8(minF(bl, 1) * 255), 255})
 		}
 	}
 	return out
