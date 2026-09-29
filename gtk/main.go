@@ -47,6 +47,7 @@ type app struct {
 	lyrFlight  string // in-flight async fetch path; guards double fetch
 	lyrBox     *gtk.Box
 	lyrLabels  []*gtk.Label
+	demoHold   bool    // demo state pins while backend is empty (screenshots)
 	fGen       fadeGen // crossfade generation; rapid skips invalidate stale fades
 	art        *gtk.Picture
 	noArt      *gtk.Label
@@ -89,7 +90,14 @@ func main() {
 	}
 
 	a := &app{be: be, cfg: cfg, tracks: tracks, view: tracks, tap: &vizTap{}}
-	gtkApp := gtk.NewApplication("org.serenade.gtk", gio.ApplicationFlagsNone)
+	// ASER_APPID overrides the application ID so headless test
+	// runs don't remote-activate (and steal focus from) a live
+	// user instance on the same session bus. Display/test only.
+	appID := os.Getenv("ASER_APPID")
+	if appID == "" {
+		appID = "org.serenade.gtk"
+	}
+	gtkApp := gtk.NewApplication(appID, gio.ApplicationFlagsNone)
 	gtkApp.ConnectActivate(func() { a.activate(gtkApp) })
 	os.Exit(gtkApp.Run(nil))
 }
@@ -250,6 +258,7 @@ func (a *app) demo(file string) {
 	}
 	a.status = Status{State: "playing", File: file, Artist: tr.Artist,
 		Title: tr.Title, Album: tr.Album, Duration: 184, Position: 61}
+	a.demoHold = true
 	a.loadArt(file)
 	a.resolveLyrics(file)
 	a.followPlaying(file)

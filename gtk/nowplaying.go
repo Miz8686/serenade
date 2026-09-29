@@ -140,6 +140,17 @@ func (a *app) poll() {
 		return
 	}
 	changed := st.File != a.status.File
+	// Demo hold: with a stopped backend the fabricated demo state
+	// would be wiped 700ms after launch, making art/backdrop
+	// screenshots nondeterministic. While holding, only a REAL
+	// file from the backend may displace the demo — an empty poll
+	// leaves demo state (and art) untouched. Display/test only.
+	if changed && a.demoHold && st.File == "" {
+		a.beErr = ""
+		a.ensureViz()
+		a.refresh()
+		return
+	}
 	oldFile := a.status.File
 	a.prev = a.status
 	a.status = st
