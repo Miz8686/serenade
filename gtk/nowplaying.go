@@ -84,6 +84,7 @@ func (a *app) buildNowPlaying(right *gtk.Box) {
 	a.durL = gtk.NewLabel("")
 	// Phase 2 strip: below transport+seek, compact by design.
 	a.buildViz(right)
+	a.buildQueueBar(right)
 	a.durL.AddCSSClass("dim")
 	seekRow.Append(a.durL)
 }

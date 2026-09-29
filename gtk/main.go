@@ -34,6 +34,10 @@ type app struct {
 	store     *gtk.StringList
 	rows      []listRow
 	search    *gtk.SearchEntry
+	shufBtn   *gtk.ToggleButton
+	qWin      *gtk.Window
+	qList     *gtk.ListBox
+	qCursor   int
 	art       *gtk.Picture
 	noArt     *gtk.Label
 	artistL   *gtk.Label

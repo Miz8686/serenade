@@ -81,6 +81,15 @@ func (a *app) onKey(keyval uint) bool {
 			a.search.GrabFocus()
 		}
 		return true
+	case is("queue", k):
+		a.enqueueSelected()
+		return true
+	case is("queueview", k):
+		a.showQueueDialog()
+		return true
+	case is("shuffle", k):
+		a.toggleShuffle()
+		return true
 	}
 	return false
 }
