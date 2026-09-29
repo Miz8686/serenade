@@ -17,13 +17,7 @@ import (
 
 func (a *app) buildNowPlaying(upper, footer *gtk.Box) {
 	a.art = gtk.NewPicture()
-	// Art is capped, not maximized: at 768p the content column
-	// fits ~450px, and lyrics need a real share (TUI-fill parity).
-	// 320 wide keeps presence; 240 tall with Contain leaves room
-	// for meta + 4-6 lyric rows above the fixed footer. No crop,
-	// no stretch — letterbox bands melt into the ink.
-	a.art.SetSizeRequest(320, 240)
-	a.art.SetContentFit(gtk.ContentFitContain)
+	a.art.SetSizeRequest(320, 320)
 	a.art.SetMarginBottom(12)
 	a.art.AddCSSClass("cover")
 	upper.Append(a.art)

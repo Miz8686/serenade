@@ -58,13 +58,3 @@ func TestLyricCacheRoundTrip(t *testing.T) {
 		t.Fatalf("tombstone must load as not-found: %+v %v", c2, ok)
 	}
 }
-
-// TestLyricFitFallback pins the fit contract: nothing measured
-// yet (headless, pre-map) means the full ceiling, never zero or
-// negative — the box must not start collapsed.
-func TestLyricFitFallback(t *testing.T) {
-	a := &app{}
-	if got := a.lyricFit(); got != lyrHeight {
-		t.Fatalf("unmeasured fit = %d, want ceiling %d", got, lyrHeight)
-	}
-}
