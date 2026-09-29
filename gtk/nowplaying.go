@@ -188,30 +188,63 @@ func (a *app) refresh() {
 	}
 }
 
-// loadArt decodes via the ported cache, paints a GdkTexture, and
-// pushes the accent pair into the selection-only CSS override.
-// Ceiling rule carried forward: per-track color touches the list
-// selection state and nothing else — the base tokens never move.
+// loadArt decodes via the ported cache, then crossfades the art +
+// backdrop swap (item 9) with the accent pair applied inside the
+// swap so color and image change in the same frame. Ceiling rule
+// carried forward: per-track color touches the list selection
+// state and nothing else — the base tokens never move.
 func (a *app) loadArt(path string) {
+	gen := a.fGen.next()
 	img, prim, sec, err := cachedArt(path)
 	if err != nil || img == nil {
-		a.art.SetPaintable(nil)
-		a.noArt.SetVisible(true)
-		a.artPrim, a.artSec = "", ""
-		a.applyAccent("", "")
-		a.setBackdrop(nil)
+		a.fadeSwap(gen, func() {
+			if a.art != nil {
+				a.art.SetPaintable(nil)
+			}
+			if a.noArt != nil {
+				a.noArt.SetVisible(true)
+			}
+			a.artPrim, a.artSec = "", ""
+			if a.accent != nil {
+				a.applyAccent("", "")
+			}
+			a.setBackdrop(nil)
+		})
 		return
 	}
-	a.noArt.SetVisible(false)
-	a.artPrim, a.artSec = prim, sec
+	// Bake both textures synchronously (same once-per-track work
+	// as before); only the widget swap animates.
+	var artTex *gdk.Texture
 	var buf bytes.Buffer
 	if err := encodePNG(&buf, img); err == nil {
 		if tex, err := gdk.NewTextureFromBytes(glib.NewBytes(buf.Bytes())); err == nil {
-			a.art.SetPaintable(tex)
+			artTex = tex
 		}
 	}
-	a.applyAccent(prim, sec)
-	a.setBackdrop(img)
+	bg := scrimAdaptive(smallBlur(toRGBA(img)), a.cfg.Theme.Bg)
+	var bbuf bytes.Buffer
+	var bgTex *gdk.Texture
+	if err := encodePNG(&bbuf, bg); err == nil {
+		if tex, err := gdk.NewTextureFromBytes(glib.NewBytes(bbuf.Bytes())); err == nil {
+			bgTex = tex
+		}
+	}
+	a.fadeSwap(gen, func() {
+		if a.noArt != nil {
+			a.noArt.SetVisible(false)
+		}
+		a.artPrim, a.artSec = prim, sec
+		if a.art != nil {
+			a.art.SetPaintable(artTex)
+		}
+		a.bgTex = bgTex
+		if a.bgPic != nil {
+			a.bgPic.SetPaintable(bgTex)
+		}
+		if a.accent != nil {
+			a.applyAccent(prim, sec)
+		}
+	})
 }
 
 // setBackdrop builds the Phase 3 atmosphere exactly once per track:
@@ -222,7 +255,9 @@ func (a *app) loadArt(path string) {
 func (a *app) setBackdrop(img image.Image) {
 	if img == nil {
 		a.bgTex = nil
-		a.bgPic.SetPaintable(nil)
+		if a.bgPic != nil {
+			a.bgPic.SetPaintable(nil)
+		}
 		return
 	}
 	bg := scrimAdaptive(smallBlur(toRGBA(img)), a.cfg.Theme.Bg)

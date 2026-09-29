@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
@@ -44,6 +45,7 @@ type app struct {
 	lyrFlight string // in-flight async fetch path; guards double fetch
 	lyrBox    *gtk.Box
 	lyrLabels []*gtk.Label
+	fGen      fadeGen // crossfade generation; rapid skips invalidate stale fades
 	art       *gtk.Picture
 	noArt     *gtk.Label
 	artistL   *gtk.Label
@@ -181,6 +183,31 @@ func (a *app) activate(app *gtk.Application) {
 	// progress render without touching playback.
 	if demo := os.Getenv("ASER_DEMO"); demo != "" {
 		a.demo(demo)
+	}
+	// ASER_DEMOSEARCH=query presets the filter box (screenshot
+	// scaffolding for the search item; same pattern as ASER_DEMO).
+	if sq := os.Getenv("ASER_DEMOSEARCH"); sq != "" && a.search != nil {
+		a.search.SetText(sq)
+	}
+	// ASER_DEMOQUEUE=1 seeds three tracks and opens the queue
+	// dialog (screenshot scaffolding for the queue item).
+	if os.Getenv("ASER_DEMOQUEUE") != "" {
+		for i := 0; i < 3 && i < len(a.tracks); i++ {
+			a.queue = append(a.queue, a.tracks[i].Path)
+		}
+		a.showQueueDialog()
+	}
+	// ASER_DEMOSEQ=f1,f2,... cycles demo tracks every 350ms to
+	// exercise fade overlap headlessly (the rapid-fire edge).
+	// Display path only; the guard itself is unit-tested.
+	if seq := os.Getenv("ASER_DEMOSEQ"); seq != "" {
+		files := strings.Split(seq, ",")
+		i := 0
+		glib.TimeoutAdd(350, func() bool {
+			i = (i + 1) % len(files)
+			a.demo(files[i])
+			return true
+		})
 	}
 	a.win.ConnectCloseRequest(func() bool {
 		a.stopViz()
