@@ -104,6 +104,7 @@ scrolledwindow viewport {
 .cover {
   background-color: transparent;
   border-radius: 0;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 
 /* Lyrics box: fixed 6 lines under the album. Lines are muted;
@@ -188,6 +189,7 @@ scrolledwindow viewport {
   background-color: @surface;
   border: 1px solid alpha(@brass, 0.35);
   border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
 .queue-heading {
