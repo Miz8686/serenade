@@ -27,7 +27,6 @@ Phase 1 app (library list, Now Playing, transport, seek, per-track
 selection accent). It shares this repo's backend socket, config, and
 art cache with the TUI.
 
-![GTK Pashmina, post-redesign](screenshots/gtk-pashmina.png)
 ![GTK photo backdrop, lyrics + viz coexisting](screenshots/gtk-photo-backdrop.png)
 ![GTK illustrated backdrop, custom icons](screenshots/gtk-illo-backdrop.png)
 
