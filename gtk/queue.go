@@ -180,8 +180,11 @@ func (a *app) syncShuffleUI() {
 	}
 }
 
-// showQueueDialog opens (or focuses) the modal queue window: live
-// ListBox over a.queue with Up/Down/Remove acting in place.
+// showQueueDialog opens (or focuses) the modal queue panel: live
+// ListBox over a.queue with Up/Down/Remove acting in place. Panel
+// chrome (surface, brass-kissed border) and icon buttons match the
+// main window's design system — same .transport-btn treatment and
+// Serenade-drawn glyphs as the secondary row.
 func (a *app) showQueueDialog() {
 	if a.qWin != nil {
 		a.qWin.Present()
@@ -199,11 +202,17 @@ func (a *app) showQueueDialog() {
 	})
 
 	box := gtk.NewBox(gtk.OrientationVertical, 6)
+	box.AddCSSClass("queue-panel")
 	box.SetMarginTop(10)
 	box.SetMarginBottom(10)
 	box.SetMarginStart(10)
 	box.SetMarginEnd(10)
 	w.SetChild(box)
+
+	head := gtk.NewLabel("Queue")
+	head.SetXAlign(0)
+	head.AddCSSClass("queue-heading")
+	box.Append(head)
 
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)
@@ -216,27 +225,30 @@ func (a *app) showQueueDialog() {
 	btns := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	btns.SetHAlign(gtk.AlignCenter)
 	box.Append(btns)
-	up := gtk.NewButtonWithLabel("Up")
+	up, _ := glyphButton("Move up", a.drawArrowUp)
 	up.ConnectClicked(func() {
 		a.queue, a.qCursor = queueMove(a.queue, a.qCursor, -1)
 		a.refreshQueueDialog()
 	})
-	down := gtk.NewButtonWithLabel("Down")
+	btns.Append(up)
+
+	down, _ := glyphButton("Move down", a.drawArrowDown)
 	down.ConnectClicked(func() {
 		a.queue, a.qCursor = queueMove(a.queue, a.qCursor, +1)
 		a.refreshQueueDialog()
 	})
-	rm := gtk.NewButtonWithLabel("Remove")
+	btns.Append(down)
+
+	rm, _ := glyphButton("Remove from queue", a.drawMinus)
 	rm.ConnectClicked(func() {
 		a.queue, a.qCursor = queueRemove(a.queue, a.qCursor)
 		a.refreshQueueDialog()
 	})
-	close := gtk.NewButtonWithLabel("Close")
-	close.ConnectClicked(func() { w.Close() })
-	for _, b := range []*gtk.Button{up, down, rm, close} {
-		b.AddCSSClass("transport-btn")
-		btns.Append(b)
-	}
+	btns.Append(rm)
+
+	closeB, _ := glyphButton("Close", a.drawCloseX)
+	closeB.ConnectClicked(func() { w.Close() })
+	btns.Append(closeB)
 	a.qList.ConnectRowSelected(func(row *gtk.ListBoxRow) {
 		if row != nil {
 			a.qCursor = row.Index()
@@ -249,7 +261,23 @@ func (a *app) showQueueDialog() {
 	w.Present()
 }
 
+// queueMeta is the second line under a queue entry: artist and
+// album when known, falling back to the file basename. Pure.
+func queueMeta(t Track) string {
+	if t.Artist != "" && t.Album != "" {
+		return t.Artist + " – " + t.Album
+	}
+	if t.Album != "" {
+		return t.Album
+	}
+	if t.Artist != "" {
+		return t.Artist
+	}
+	return filepath.Base(t.Path)
+}
+
 // refreshQueueDialog rebuilds the ListBox from the live queue.
+// Rows get the library two-line treatment (title + muted meta).
 // No-op when the dialog is closed.
 func (a *app) refreshQueueDialog() {
 	if a.qList == nil {
@@ -257,14 +285,22 @@ func (a *app) refreshQueueDialog() {
 	}
 	a.qList.RemoveAll()
 	for _, p := range a.queue {
-		l := gtk.NewLabel(queueLabel(trackByPath(a.tracks, p)))
-		l.SetXAlign(0)
+		t := trackByPath(a.tracks, p)
+		title := gtk.NewLabel(queueLabel(t))
+		title.SetXAlign(0)
+		title.AddCSSClass("track-title")
+		meta := gtk.NewLabel(queueMeta(t))
+		meta.SetXAlign(0)
+		meta.AddCSSClass("track-meta")
+		cell := gtk.NewBox(gtk.OrientationVertical, 0)
+		cell.Append(title)
+		cell.Append(meta)
 		row := gtk.NewListBoxRow()
-		row.SetChild(l)
+		row.SetChild(cell)
 		a.qList.Append(row)
 	}
 	if len(a.queue) == 0 {
-		empty := gtk.NewLabel("Queue is empty — press a on a track to add it.")
+		empty := gtk.NewLabel("Queue is empty — press a or right-click a track to add it.")
 		empty.AddCSSClass("dim")
 		row := gtk.NewListBoxRow()
 		row.SetSelectable(false)

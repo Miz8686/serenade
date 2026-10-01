@@ -182,6 +182,20 @@ scrolledwindow viewport {
   min-height: 18px;
 }
 
+/* Queue panel: ink canvas, surface body, brass-kissed edge —
+ * the dialog reads as Serenade chrome, not a default rectangle. */
+.queue-panel {
+  background-color: @surface;
+  border: 1px solid alpha(@brass, 0.35);
+  border-radius: 8px;
+}
+
+.queue-heading {
+  color: @paper;
+  font-size: 1.05em;
+  font-weight: 800;
+}
+
 /* Pane divider: one quiet line, nothing more. */
 paned > separator {
   background-color: @surface;

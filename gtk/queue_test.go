@@ -50,3 +50,31 @@ func TestQueueLabel(t *testing.T) {
 		t.Fatalf("trackByPath passthrough: %q", got)
 	}
 }
+
+func TestQueueMeta(t *testing.T) {
+	if got := queueMeta(Track{Artist: "Al", Album: "One"}); got != "Al – One" {
+		t.Fatalf("full meta: %q", got)
+	}
+	if got := queueMeta(Track{Album: "Solo"}); got != "Solo" {
+		t.Fatalf("album only: %q", got)
+	}
+	if got := queueMeta(Track{Artist: "Al"}); got != "Al" {
+		t.Fatalf("artist only: %q", got)
+	}
+	if got := queueMeta(Track{Path: "/x/y.flac"}); got != "y.flac" {
+		t.Fatalf("basename fallback: %q", got)
+	}
+}
+
+func TestQueuePathOps(t *testing.T) {
+	a := &app{tracks: []Track{{Path: "/a"}, {Path: "/b"}}}
+	a.enqueuePath("/a")
+	a.enqueuePath("")
+	if len(a.queue) != 1 || a.queue[0] != "/a" {
+		t.Fatalf("enqueue: %v", a.queue)
+	}
+	a.playNextPath("/b")
+	if len(a.queue) != 2 || a.queue[0] != "/b" || a.queue[1] != "/a" {
+		t.Fatalf("play-next prepends: %v", a.queue)
+	}
+}

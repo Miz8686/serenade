@@ -141,3 +141,51 @@ func (a *app) drawQueueList(cr *cairo.Context, w, h int) {
 	cr.Arc(4, 16, 1.8, 0, 6.2832)
 	cr.Fill()
 }
+
+// drawArrowUp paints a rising chevron-line with head — move up.
+func (a *app) drawArrowUp(cr *cairo.Context, w, h int) {
+	r, g, b := glyphColors(false)
+	cr.SetSourceRGB(r, g, b)
+	cr.SetLineWidth(2)
+	cr.SetLineCap(cairo.LineCapRound)
+	cr.MoveTo(11, 17)
+	cr.LineTo(11, 6)
+	cr.Stroke()
+	arrowHead(cr, 11, 4, -math.Pi/2)
+}
+
+// drawArrowDown paints the falling counterpart — move down.
+func (a *app) drawArrowDown(cr *cairo.Context, w, h int) {
+	r, g, b := glyphColors(false)
+	cr.SetSourceRGB(r, g, b)
+	cr.SetLineWidth(2)
+	cr.SetLineCap(cairo.LineCapRound)
+	cr.MoveTo(11, 5)
+	cr.LineTo(11, 16)
+	cr.Stroke()
+	arrowHead(cr, 11, 18, math.Pi/2)
+}
+
+// drawMinus paints a single register line — remove from queue.
+func (a *app) drawMinus(cr *cairo.Context, w, h int) {
+	r, g, b := glyphColors(false)
+	cr.SetSourceRGB(r, g, b)
+	cr.SetLineWidth(2.2)
+	cr.SetLineCap(cairo.LineCapRound)
+	cr.MoveTo(5, 11)
+	cr.LineTo(17, 11)
+	cr.Stroke()
+}
+
+// drawCloseX paints a plain cross — close the panel.
+func (a *app) drawCloseX(cr *cairo.Context, w, h int) {
+	r, g, b := glyphColors(false)
+	cr.SetSourceRGB(r, g, b)
+	cr.SetLineWidth(2.2)
+	cr.SetLineCap(cairo.LineCapRound)
+	cr.MoveTo(6.5, 6.5)
+	cr.LineTo(15.5, 15.5)
+	cr.MoveTo(15.5, 6.5)
+	cr.LineTo(6.5, 15.5)
+	cr.Stroke()
+}
