@@ -30,6 +30,8 @@ art cache with the TUI.
 ![GTK Pashmina](screenshots/gtk-pashmina.png)
 ![GTK photo backdrop, lyrics + viz coexisting](screenshots/gtk-photo-backdrop.png)
 ![GTK illustrated backdrop, custom icons](screenshots/gtk-illo-backdrop.png)
+![GTK queue redesign](screenshots/gtk-queue-redesign.png)
+![GTK track context menu](screenshots/gtk-rowmenu.png)
 
 ## Requirements
 
