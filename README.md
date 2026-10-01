@@ -30,6 +30,8 @@ art cache with the TUI.
 ![GTK idle](screenshots/gtk-idle.png)
 ![GTK playing](screenshots/gtk-playing.png)
 ![GTK Pashmina, post-redesign](screenshots/gtk-pashmina.png)
+![GTK photo backdrop, lyrics + viz coexisting](screenshots/gtk-photo-backdrop.png)
+![GTK illustrated backdrop, custom icons](screenshots/gtk-illo-backdrop.png)
 
 ## Requirements
 
