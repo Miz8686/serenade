@@ -59,6 +59,7 @@ func (a *app) buildList() *gtk.ListView {
 	rows, labels := listRows(a.view)
 	a.rows = rows
 	a.rowWidgets = map[int]*gtk.Widget{}
+	a.widgetPos = map[*gtk.Widget]int{}
 	a.store = gtk.NewStringList(labels)
 	a.sel = gtk.NewSingleSelection(a.store)
 	a.sel.SetCanUnselect(false)
@@ -67,6 +68,23 @@ func (a *app) buildList() *gtk.ListView {
 	factory.ConnectSetup(func(o *glib.Object) {
 		box := gtk.NewBox(gtk.OrientationVertical, 0)
 		box.AddCSSClass("library-list-item")
+		// Secondary-click opens the track context menu. One
+		// controller per row widget (setup runs once); the bind
+		// pass below keeps its target position current.
+		click := gtk.NewGestureClick()
+		click.SetButton(3)
+		click.ConnectPressed(func(_ int, _, _ float64) {
+			pos, ok := a.widgetPos[&box.Widget]
+			if !ok || pos < 0 || pos >= len(a.rows) {
+				return
+			}
+			r := a.rows[pos]
+			if r.kind != rowTrack {
+				return
+			}
+			a.openRowMenu(&box.Widget, a.view[r.idx].Path)
+		})
+		box.AddController(click)
 		title := gtk.NewLabel("")
 		title.SetXAlign(0)
 		title.SetEllipsize(pango.EllipsizeEnd)
@@ -103,6 +121,15 @@ func (a *app) buildList() *gtk.ListView {
 			}
 		}
 		a.rowWidgets[pos] = w
+		if a.widgetPos == nil {
+			a.widgetPos = map[*gtk.Widget]int{}
+		}
+		for ow := range a.widgetPos {
+			if ow == w {
+				delete(a.widgetPos, ow)
+			}
+		}
+		a.widgetPos[w] = pos
 		title := box.FirstChild().(*gtk.Label)
 		meta := title.NextSibling().(*gtk.Label)
 		if r.kind == rowArtist {

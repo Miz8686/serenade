@@ -196,6 +196,40 @@ scrolledwindow viewport {
   font-weight: 800;
 }
 
+/* Context menu: same surface/paper tokens as the queue panel,
+ * brass-kissed hover. */
+popover.menu {
+  background-color: @surface;
+}
+
+popover.menu modelbutton {
+  color: @paper;
+}
+
+popover.menu modelbutton:hover {
+  background-color: alpha(@brass, 0.22);
+}
+
+/* Track context menu rows: full-width paper text, brass hover. */
+.row-menu {
+  background-color: @surface;
+  border: 1px solid alpha(@brass, 0.35);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.row-menu-item {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: @paper;
+  padding: 6px 12px;
+}
+
+.row-menu-item:hover {
+  background-color: alpha(@brass, 0.22);
+}
+
 /* Pane divider: one quiet line, nothing more. */
 paned > separator {
   background-color: @surface;

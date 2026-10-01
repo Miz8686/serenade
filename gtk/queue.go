@@ -125,8 +125,65 @@ func (a *app) enqueueSelected() {
 	if pos < 0 || pos >= len(a.rows) || a.rows[pos].kind != rowTrack {
 		return
 	}
-	a.queue = append(a.queue, a.view[a.rows[pos].idx].Path)
+	a.enqueuePath(a.view[a.rows[pos].idx].Path)
+}
+
+// enqueuePath appends one file to the queue tail. Shared by the
+// key, the button, and the context menu — one call site.
+func (a *app) enqueuePath(path string) {
+	if path == "" {
+		return
+	}
+	a.queue = append(a.queue, path)
 	a.refreshQueueDialog()
+}
+
+// playNextPath queues one file to play immediately after the
+// current track (queue head).
+func (a *app) playNextPath(path string) {
+	if path == "" {
+		return
+	}
+	a.queue = append([]string{path}, a.queue...)
+	a.refreshQueueDialog()
+}
+
+// playNowPath starts one file right now, bypassing the queue.
+func (a *app) playNowPath(path string) {
+	if path == "" {
+		return
+	}
+	_ = a.be.playFile(path)
+}
+
+// openRowMenu pops the track context menu anchored at the row
+// widget: Add to Queue plus the two trivial siblings (Play Next
+// inserts at queue head, Play Now starts immediately). Plain
+// GtkPopover with direct callbacks — gotk4 exposes no working
+// GAction registration (action-group insert segfaults, no window
+// AddAction binding), so a MenuModel-driven PopoverMenu cannot be
+// wired; the gesture, anchor, and behavior are exactly as specced.
+func (a *app) openRowMenu(anchor *gtk.Widget, path string) {
+	pop := gtk.NewPopover()
+	pop.Widget.SetParent(anchor)
+	pop.AddCSSClass("row-menu")
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
+	pop.SetChild(box)
+	mk := func(label, tip string, fn func()) {
+		b := gtk.NewButtonWithLabel(label)
+		b.SetTooltipText(tip)
+		b.SetHAlign(gtk.AlignFill)
+		b.AddCSSClass("row-menu-item")
+		b.ConnectClicked(func() {
+			pop.Popdown()
+			fn()
+		})
+		box.Append(b)
+	}
+	mk("Add to Queue", "Queue after everything (a)", func() { a.enqueuePath(path) })
+	mk("Play Next", "Queue at head", func() { a.playNextPath(path) })
+	mk("Play Now", "Start immediately", func() { a.playNowPath(path) })
+	pop.Popup()
 }
 
 // buildQueueBar adds the quiet secondary row under seek: shuffle

@@ -42,6 +42,7 @@ type app struct {
 	qWin       *gtk.Window
 	qList      *gtk.ListBox
 	qCursor    int
+	widgetPos  map[*gtk.Widget]int // row widget to model pos
 	lyrFile    string
 	lyrLines   []lyricLine
 	lyrSynced  bool
@@ -209,6 +210,26 @@ func (a *app) activate(app *gtk.Application) {
 	if sq := os.Getenv("ASER_DEMOSEARCH"); sq != "" && a.search != nil {
 		a.search.SetText(sq)
 	}
+	// ASER_DEMOMENU=viewidx opens the track context menu for
+	// that library row (screenshot scaffolding for the menu).
+	if ms := os.Getenv("ASER_DEMOMENU"); ms != "" {
+		var vidx int
+		fmt.Sscanf(ms, "%d", &vidx)
+		glib.TimeoutAdd(3000, func() bool {
+			if vidx < 0 || vidx >= len(a.view) {
+				return false
+			}
+			for r, lr := range a.rows {
+				if lr.kind == rowTrack && lr.idx == vidx {
+					if w, ok := a.rowWidgets[r]; ok && w != nil {
+						a.openRowMenu(w, a.view[vidx].Path)
+					}
+					break
+				}
+			}
+			return false
+		})
+	}
 	// ASER_DEMOQUEUE=1 seeds three tracks and opens the queue
 	// dialog (screenshot scaffolding for the queue item).
 	if os.Getenv("ASER_DEMOQUEUE") != "" {
@@ -249,6 +270,7 @@ func (a *app) applySearch() {
 	rows, labels := listRows(a.view)
 	a.rows = rows
 	a.rowWidgets = map[int]*gtk.Widget{}
+	a.widgetPos = map[*gtk.Widget]int{}
 	a.store.Splice(0, a.store.NItems(), labels)
 	a.followPlaying(a.status.File)
 	if a.status.File == "" {
